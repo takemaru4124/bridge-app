@@ -189,20 +189,14 @@
     white-space: nowrap; transition: all 0.15s;
   }
   .viewer-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-
   .viewer-content { padding-top: 44px; }
+  .viewer-content.no-tabs { padding-top: 0; }
   .viewer-section { display: none; }
   .viewer-section.active { display: block; }
 
   /* ページビューア */
-  .page-viewer {
-    padding: 12px;
-    display: flex; flex-direction: column; gap: 12px;
-  }
-  .page-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); overflow: hidden;
-  }
+  .page-viewer { padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .page-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
   .page-card-header {
     padding: 10px 14px; background: var(--surface2);
     font-size: 12px; font-weight: 700; color: var(--text2);
@@ -210,9 +204,7 @@
     display: flex; align-items: center; justify-content: space-between;
   }
   .page-card canvas { display: block; width: 100%; height: auto; }
-  .page-loading {
-    padding: 40px; text-align: center; color: var(--text2); font-size: 13px;
-  }
+  .page-loading { padding: 40px; text-align: center; color: var(--text2); font-size: 13px; }
   .loading-spinner {
     width: 32px; height: 32px; border: 3px solid var(--border);
     border-top-color: var(--accent); border-radius: 50%;
@@ -221,22 +213,99 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ===== 書き込みビューア ===== */
-  .draw-container {
-    position: relative; margin: 12px;
-    border-radius: var(--radius); overflow: hidden;
-    border: 1px solid var(--border);
+  /* ズーム可能ラッパー */
+  .draw-zoom-wrapper {
+    overflow: hidden; touch-action: none; position: relative;
+    margin: 12px; border-radius: var(--radius); border: 1px solid var(--border);
   }
+  .draw-zoom-inner { transform-origin: 0 0; position: relative; display: block; width: 100%; }
+  .draw-container { position: relative; }
   .draw-base { display: block; width: 100%; height: auto; }
   .draw-canvas {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     touch-action: none; cursor: crosshair;
   }
+
+  /* ===== フローティングツールバー ===== */
   .draw-toolbar {
-    position: sticky; top: 100px; z-index: 80;
-    margin: 0 12px 8px; background: var(--surface2);
-    border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    position: fixed; bottom: 20px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 200; width: auto; max-width: calc(100vw - 20px);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    transition: none; user-select: none;
   }
+  .draw-toolbar-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; gap: 8px; cursor: grab; touch-action: none;
+  }
+  .draw-toolbar-header:active { cursor: grabbing; }
+  .draw-toolbar-title { font-size: 11px; font-weight: 700; color: var(--text2); white-space: nowrap; }
+  .draw-toolbar-toggle {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 4px 10px;
+    font-size: 11px; cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  }
+  .draw-toolbar-body {
+    padding: 0 12px 12px;
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    overflow-x: auto; max-height: 50vh;
+  }
+  .draw-toolbar-body.hidden { display: none; }
+  .draw-tool-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 7px 12px;
+    font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .draw-tool-btn.active, .draw-tool-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .draw-tool-btn.eraser.active { background: var(--red); border-color: var(--red); }
+  .color-btn {
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+  }
+  .color-btn.active { border-color: #fff; transform: scale(1.2); }
+  .draw-toolbar-sep { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+  .size-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text2); border-radius: 6px; padding: 5px 8px;
+    font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .size-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .draw-save-btn {
+    background: var(--green); border: none; color: #fff;
+    border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; gap: 5px;
+  }
+
+  /* ===== オブジェクト編集パネル ===== */
+  .obj-edit-panel {
+    position: fixed; right: 12px; top: 110px; z-index: 201;
+    background: var(--surface2); border: 1px solid var(--accent);
+    border-radius: var(--radius); padding: 12px 12px 10px;
+    width: 176px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    display: none;
+  }
+  .obj-edit-panel.show { display: block; }
+  .obj-edit-title { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+  .obj-edit-label { font-size: 10px; color: var(--text2); margin-bottom: 4px; display: block; }
+  .obj-edit-row { margin-bottom: 8px; }
+  .obj-edit-colors { display: flex; gap: 5px; flex-wrap: wrap; }
+  .obj-edit-close {
+    position: absolute; top: 6px; right: 8px;
+    background: none; border: none; color: var(--text2);
+    font-size: 16px; cursor: pointer;
+  }
+
+  /* SVG */
+  .draw-svg-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+  .draw-svg-overlay.interactive { pointer-events: auto; }
+  .svg-obj { cursor: pointer; }
+  .svg-obj.selected line, .svg-obj.selected polyline { stroke: #60d0ff !important; }
+  .svg-obj-hit { stroke: transparent; stroke-width: 14px; fill: none; cursor: pointer; }
   .draw-tool-btn {
     background: var(--surface); border: 1px solid var(--border);
     color: var(--text); border-radius: 8px; padding: 7px 12px;
@@ -580,6 +649,41 @@
   <div class="viewer-content" id="viewer-content"></div>
 </div>
 
+<!-- オブジェクト編集パネル（描画ビューア用）-->
+<div class="obj-edit-panel" id="obj-edit-panel">
+  <button class="obj-edit-close" onclick="closeEditPanel()">✕</button>
+  <div class="obj-edit-title">✏️ オブジェクト編集</div>
+  <div class="obj-edit-row">
+    <span class="obj-edit-label">色</span>
+    <div class="obj-edit-colors" id="edit-colors">
+      <button class="color-btn" style="background:#ef4444" onclick="editObjColor('#ef4444',this)"></button>
+      <button class="color-btn" style="background:#3b82f6" onclick="editObjColor('#3b82f6',this)"></button>
+      <button class="color-btn" style="background:#22c55e" onclick="editObjColor('#22c55e',this)"></button>
+      <button class="color-btn" style="background:#f59e0b" onclick="editObjColor('#f59e0b',this)"></button>
+      <button class="color-btn" style="background:#ffffff" onclick="editObjColor('#ffffff',this)"></button>
+    </div>
+  </div>
+  <div class="obj-edit-row">
+    <span class="obj-edit-label">パターン（図形のみ）</span>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="size-btn" onclick="editObjPattern('none')">なし</button>
+      <button class="size-btn" onclick="editObjPattern('hatch')">網掛け</button>
+      <button class="size-btn" onclick="editObjPattern('diag')">斜め線</button>
+      <button class="size-btn" onclick="editObjPattern('solid')">塗潰し</button>
+    </div>
+  </div>
+  <div class="obj-edit-row">
+    <span class="obj-edit-label">線の太さ (mm)</span>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">
+      <button class="size-btn" onclick="editObjSize(0.25)">0.25</button>
+      <button class="size-btn" onclick="editObjSize(0.5)">0.5</button>
+      <button class="size-btn" onclick="editObjSize(1.0)">1.0</button>
+      <button class="size-btn" onclick="editObjSize(1.5)">1.5</button>
+      <button class="size-btn" onclick="editObjSize(3.0)">3.0</button>
+    </div>
+  </div>
+</div>
+
 <!-- トースト -->
 <div id="toast"></div>
 
@@ -622,11 +726,12 @@ const state = {
 
 // ===== メニュー定義（mapKeyでページを動的解決）=====
 const MENU_SURVEY_BASE = [
-  { key:'s2',  mapKey:'s2',  icon:'📐', title:'その２　径間別一般図',   sub:'橋梁の平面・側面・断面図',  tags:['view'],         type:'pdf-viewer',  pages:[] },
-  { key:'s3',  mapKey:'s3',  icon:'📸', title:'その３　現地状況写真',   sub:'現地写真の確認・撮影',      tags:['view','photo'], type:'photo-view',  pages:[], photoRequired:true },
-  { key:'s4',  mapKey:'s4',  icon:'✏️', title:'その４　部材番号図',     sub:'フリーハンド書き込み可',    tags:['view','draw'],  type:'draw-viewer', pages:[] },
-  { key:'s5',  mapKey:'s5',  icon:'📋', title:'その５　状態把握の方法', sub:'近接目視等の記録',          tags:['view'],         type:'pdf-viewer',  pages:[] },
-  { key:'s6',  mapKey:'s6',  icon:'🔬', title:'その６　健全性の所見',   sub:'診断結果の確認',            tags:['view'],         type:'pdf-viewer',  pages:[] },
+  { key:'s1',  mapKey:'s1',  icon:'📋', title:'その１　橋梁の諸元',       sub:'橋梁の基本情報・総合検査結果', tags:['view'],         type:'pdf-viewer',  pages:[] },
+  { key:'s2',  mapKey:'s2',  icon:'📐', title:'その２　径間別一般図',     sub:'橋梁の平面・側面・断面図',     tags:['view'],         type:'pdf-viewer',  pages:[] },
+  { key:'s3',  mapKey:'s3',  icon:'📸', title:'その３　現地状況写真',     sub:'現地写真の確認・撮影',         tags:['view','photo'], type:'photo-view',  pages:[], photoRequired:true },
+  { key:'s4',  mapKey:'s4',  icon:'✏️', title:'その４　部材番号図',       sub:'フリーハンド書き込み可',       tags:['view','draw'],  type:'draw-viewer', pages:[] },
+  { key:'s5',  mapKey:'s5',  icon:'📋', title:'その５　状態把握の方法',   sub:'近接目視等の記録',             tags:['view'],         type:'pdf-viewer',  pages:[] },
+  { key:'s6',  mapKey:'s6',  icon:'🔬', title:'その６　健全性の所見',     sub:'診断結果の確認',               tags:['view'],         type:'pdf-viewer',  pages:[] },
 ];
 const MENU_INSPECT_EXTRA = [
   { key:'s9',  mapKey:'s9',  icon:'🗺️', title:'その９　損傷図',         sub:'フリーハンド書き込み可',    tags:['view','draw'],  type:'draw-viewer', pages:[] },
@@ -945,28 +1050,37 @@ async function loadPDF(input) {
 }
 
 // ===== ページ構成自動検出 =====
-// PDF.jsでテキストを抽出して様式番号→ページ番号を解決
 async function detectPageStructure(pdf) {
-  const pageMap = {}; // { 's2': [2], 's3': [3,4,5,6], ... }
-  const keywords = {
-    'その２': 's2', 'その３': 's3', 'その４': 's4',
-    'その５': 's5', 'その６': 's6',
-    'その９': 's9', 'その１０': 's10',
-  };
+  const pageMap = {};
 
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
       const page = await pdf.getPage(p);
       const tc = await page.getTextContent();
       const text = tc.items.map(i => i.str).join('');
-      // 様式番号を検出
-      if (text.includes('定期点検記録様式') || text.includes('データ記録様式')) {
-        for (const [key, id] of Object.entries(keywords)) {
-          if (text.includes(key)) {
+
+      const isKisoku  = text.includes('定期点検記録様式');
+      const isData    = text.includes('データ記録様式');
+      if (!isKisoku && !isData) continue;
+
+      // ★ 長い名前を先にチェック（その１０→その１の順）
+      let matched = false;
+      for (const [key, id] of [
+        ['その１０', 's10'], ['その９', 's9'],
+        ['その６', 's6'],   ['その５', 's5'],
+        ['その４', 's4'],   ['その３', 's3'],
+        ['その２', 's2'],   ['その１', 's1'],
+      ]) {
+        if (text.includes(key)) {
+          // その１は1ページ目のみ（複数ページ不要）
+          if (id === 's1') {
+            if (!pageMap['s1']) pageMap['s1'] = [p];
+          } else {
             if (!pageMap[id]) pageMap[id] = [];
             pageMap[id].push(p);
-            break;
           }
+          matched = true;
+          break;
         }
       }
     } catch(e) {}
@@ -982,7 +1096,6 @@ async function detectPageStructure(pdf) {
     }
   });
 
-  // 写真スロットを動的生成
   await buildPhotoSlotsFromPDF(pdf, pageMap);
 }
 
@@ -1144,54 +1257,59 @@ async function renderDrawViewer(item, tabs, content) {
     section.className = 'viewer-section' + (i === 0 ? ' active' : '');
     const drawKey = `${item.key}_p${p}`;
 
-    // ツールバー
+    // フローティングツールバー + ズームラッパー
     section.innerHTML = `
       <div class="draw-toolbar" id="toolbar-${drawKey}">
-        <button class="draw-tool-btn active" id="tool-pen-${drawKey}"    onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
-        <button class="draw-tool-btn"         id="tool-line-${drawKey}"   onclick="setTool('line','${drawKey}')">╱ 直線</button>
-        <button class="draw-tool-btn"         id="tool-arrow-${drawKey}"  onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
-        <button class="draw-tool-btn"         id="tool-rect-${drawKey}"   onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
-        <button class="draw-tool-btn"         id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
-        <button class="draw-tool-btn"         id="tool-select-${drawKey}" onclick="setTool('select','${drawKey}')">▷ 選択</button>
-        <button class="draw-tool-btn eraser"  id="tool-eraser-${drawKey}" onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
-        <span class="draw-toolbar-sep"></span>
-        <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
-        <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
-        <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
-        <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
-        <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
-        <span class="draw-toolbar-sep"></span>
-        <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
-        <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
-        <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
-        <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
-        <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
-        <span style="font-size:10px;color:var(--text2)">mm</span>
-        <span class="draw-toolbar-sep"></span>
-        <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
-        <button class="size-btn active" id="pat-none-${drawKey}"   onclick="setPattern('none','${drawKey}',this)">なし</button>
-        <button class="size-btn"        id="pat-hatch-${drawKey}"  onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
-        <button class="size-btn"        id="pat-diag-${drawKey}"   onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
-        <button class="size-btn"        id="pat-solid-${drawKey}"  onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
-        <span class="draw-toolbar-sep"></span>
-        <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
-        <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
-        <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
-        <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
-        <span class="draw-toolbar-sep"></span>
-        <span style="font-size:10px;color:var(--text2);white-space:nowrap">回転:</span>
-        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)" style="padding:7px 10px">◁ -1°</button>
-        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)" style="padding:7px 10px">◁◁ -10°</button>
-        <input type="number" id="rot-input-${drawKey}" min="-360" max="360" value="0"
-          style="width:52px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 6px;font-size:12px;text-align:center"
-          onchange="rotateToAngle('${drawKey}',this.value)">
-        <span style="font-size:10px;color:var(--text2)">°</span>
-        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',10)"  style="padding:7px 10px">+10° ▷▷</button>
-        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)"   style="padding:7px 10px">+1° ▷</button>
-        <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${p})">💾 保存</button>
+        <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
+          <span class="draw-toolbar-title">🖊️ 描画ツール</span>
+          <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
+        </div>
+        <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
+          <button class="draw-tool-btn active" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
+          <button class="draw-tool-btn"        id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
+          <button class="draw-tool-btn"        id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
+          <button class="draw-tool-btn"        id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
+          <button class="draw-tool-btn"        id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
+          <button class="draw-tool-btn"        id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
+          <button class="draw-tool-btn eraser" id="tool-eraser-${drawKey}"  onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
+          <span class="draw-toolbar-sep"></span>
+          <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
+          <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
+          <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
+          <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
+          <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
+          <span class="draw-toolbar-sep"></span>
+          <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
+          <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
+          <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
+          <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
+          <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
+          <span style="font-size:10px;color:var(--text2)">mm</span>
+          <span class="draw-toolbar-sep"></span>
+          <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
+          <button class="size-btn active" id="pat-none-${drawKey}"  onclick="setPattern('none','${drawKey}',this)">なし</button>
+          <button class="size-btn"        id="pat-hatch-${drawKey}" onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
+          <button class="size-btn"        id="pat-diag-${drawKey}"  onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
+          <button class="size-btn"        id="pat-solid-${drawKey}" onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
+          <span class="draw-toolbar-sep"></span>
+          <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
+          <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
+          <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
+          <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
+          <span class="draw-toolbar-sep"></span>
+          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)">◁◁-10°</button>
+          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)">◁-1°</button>
+          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)">+1°▷</button>
+          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',10)">+10°▷▷</button>
+          <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${p})">💾 保存</button>
+        </div>
       </div>
-      <div class="draw-container" id="draw-container-${drawKey}">
-        <div class="page-loading" id="draw-loading-${drawKey}"><div class="loading-spinner"></div>読み込み中...</div>
+      <div class="draw-zoom-wrapper" id="zoom-wrapper-${drawKey}">
+        <div class="draw-zoom-inner" id="zoom-inner-${drawKey}">
+          <div class="draw-container" id="draw-container-${drawKey}">
+            <div class="page-loading" id="draw-loading-${drawKey}"><div class="loading-spinner"></div>読み込み中...</div>
+          </div>
+        </div>
       </div>
     `;
     content.appendChild(section);
@@ -1202,6 +1320,224 @@ async function renderDrawViewer(item, tabs, content) {
       setupDrawCanvas(drawKey, imgData);
     }
   }
+}
+
+// ===== ツールバー最小化 =====
+function toggleToolbar(key) {
+  const body   = document.getElementById(`toolbar-body-${key}`);
+  const toggle = document.querySelector(`#toolbar-${key} .draw-toolbar-toggle`);
+  if (!body) return;
+  const hidden = body.classList.toggle('hidden');
+  if (toggle) toggle.textContent = hidden ? '展開 ▼' : '最小化 ▲';
+}
+
+// ===== ツールバードラッグ移動 =====
+function setupToolbarDrag(key) {
+  const toolbar = document.getElementById(`toolbar-${key}`);
+  const header  = document.getElementById(`toolbar-header-${key}`);
+  if (!toolbar || !header) return;
+
+  let startX, startY, origLeft, origBottom, dragging = false;
+
+  const onStart = (e) => {
+    if (e.target.tagName === 'BUTTON') return;
+    dragging = true;
+    const src = e.touches ? e.touches[0] : e;
+    startX = src.clientX; startY = src.clientY;
+    const rect = toolbar.getBoundingClientRect();
+    origLeft   = rect.left;
+    origBottom = window.innerHeight - rect.bottom;
+    toolbar.style.left   = origLeft + 'px';
+    toolbar.style.bottom = origBottom + 'px';
+    toolbar.style.transform = 'none';
+    e.preventDefault();
+  };
+  const onMove = (e) => {
+    if (!dragging) return;
+    const src = e.touches ? e.touches[0] : e;
+    const dx = src.clientX - startX;
+    const dy = src.clientY - startY;
+    toolbar.style.left   = Math.max(0, Math.min(window.innerWidth  - toolbar.offsetWidth,  origLeft   + dx)) + 'px';
+    toolbar.style.bottom = Math.max(0, Math.min(window.innerHeight - toolbar.offsetHeight, origBottom - dy)) + 'px';
+    e.preventDefault();
+  };
+  const onEnd = () => { dragging = false; };
+
+  header.addEventListener('touchstart', onStart, { passive: false });
+  header.addEventListener('touchmove',  onMove,  { passive: false });
+  header.addEventListener('touchend',   onEnd);
+  header.addEventListener('mousedown',  onStart);
+  window.addEventListener('mousemove',  onMove);
+  window.addEventListener('mouseup',    onEnd);
+}
+
+// ===== ピンチズーム =====
+function setupPinchZoom(key) {
+  const wrapper = document.getElementById(`zoom-wrapper-${key}`);
+  const inner   = document.getElementById(`zoom-inner-${key}`);
+  if (!wrapper || !inner) return;
+
+  let scale = 1, lastScale = 1;
+  let originX = 0, originY = 0;
+  let panX = 0, panY = 0;
+  let lastPanX = 0, lastPanY = 0;
+  let lastMidX = 0, lastMidY = 0;
+  let isPinching = false, isPanning = false;
+  let lastTouchX = 0, lastTouchY = 0;
+
+  const applyTransform = () => {
+    inner.style.transformOrigin = `${originX}px ${originY}px`;
+    inner.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  };
+
+  const getDist = (t) => {
+    const dx = t[0].clientX - t[1].clientX;
+    const dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  };
+  const getMid = (t) => ({
+    x: (t[0].clientX + t[1].clientX) / 2,
+    y: (t[0].clientY + t[1].clientY) / 2,
+  });
+
+  wrapper.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      isPinching = true; isPanning = false;
+      lastScale = scale;
+      lastPanX = panX; lastPanY = panY;
+      const mid = getMid(e.touches);
+      lastMidX = mid.x; lastMidY = mid.y;
+      originX = mid.x - wrapper.getBoundingClientRect().left;
+      originY = mid.y - wrapper.getBoundingClientRect().top;
+      e.preventDefault();
+    } else if (e.touches.length === 1 && scale > 1) {
+      isPanning = true;
+      lastTouchX = e.touches[0].clientX;
+      lastTouchY = e.touches[0].clientY;
+      lastPanX = panX; lastPanY = panY;
+    }
+  }, { passive: false });
+
+  wrapper.addEventListener('touchmove', (e) => {
+    if (isPinching && e.touches.length === 2) {
+      const dist0 = getDist(e.touches);
+      const mid   = getMid(e.touches);
+      scale = Math.min(5, Math.max(1, lastScale * (dist0 / getDist([{clientX: lastMidX + (e.touches[0].clientX - lastMidX), clientY: lastMidY + (e.touches[0].clientY - lastMidY)}, {clientX: lastMidX + (e.touches[1].clientX - lastMidX), clientY: lastMidY + (e.touches[1].clientY - lastMidY)}]))));
+      // よりシンプルな計算
+      e.preventDefault();
+    } else if (isPanning && e.touches.length === 1 && scale > 1) {
+      const dx = e.touches[0].clientX - lastTouchX;
+      const dy = e.touches[0].clientY - lastTouchY;
+      panX = lastPanX + dx; panY = lastPanY + dy;
+      applyTransform();
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  // シンプルなピンチズーム実装（TouchEventベース）
+  let initDist = 0;
+  wrapper.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      initDist = getDist(e.touches);
+      lastScale = scale;
+    }
+  }, { passive: true });
+
+  wrapper.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      const newDist = getDist(e.touches);
+      scale = Math.min(5, Math.max(0.5, lastScale * newDist / initDist));
+      applyTransform();
+    }
+  }, { passive: false });
+
+  wrapper.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) isPinching = false;
+    if (e.touches.length === 0) { isPanning = false; }
+    if (scale < 1) { scale = 1; panX = 0; panY = 0; applyTransform(); }
+  });
+}
+
+// ===== 編集パネル =====
+let _editPanelKey = null;
+
+function openEditPanel(key) {
+  _editPanelKey = key;
+  document.getElementById('obj-edit-panel')?.classList.add('show');
+}
+function closeEditPanel() {
+  document.getElementById('obj-edit-panel')?.classList.remove('show');
+  _editPanelKey = null;
+}
+function editObjColor(color, btn) {
+  if (!_editPanelKey) return;
+  const ds = drawState[_editPanelKey];
+  if (!ds || !ds.selectedId) return;
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+  obj.color = color;
+  renderSVGObjects(_editPanelKey);
+  document.querySelectorAll('#edit-colors .color-btn').forEach(b => b.classList.remove('active'));
+  btn?.classList.add('active');
+}
+function editObjPattern(pat) {
+  if (!_editPanelKey) return;
+  const ds = drawState[_editPanelKey];
+  if (!ds || !ds.selectedId) return;
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+  obj.pattern = pat;
+  renderSVGObjects(_editPanelKey);
+}
+function editObjSize(mm) {
+  if (!_editPanelKey) return;
+  const ds = drawState[_editPanelKey];
+  if (!ds || !ds.selectedId) return;
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+  obj.sizeMM = mm;
+  renderSVGObjects(_editPanelKey);
+}
+
+// ===== その場回転（選択オブジェクトの中心でドラッグ回転）=====
+function startRotateHandle(e, key) {
+  e.preventDefault(); e.stopPropagation();
+  const ds = drawState[key];
+  if (!ds || !ds.selectedId) return;
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+
+  const container = document.getElementById(`draw-container-${key}`);
+  const rect = container.getBoundingClientRect();
+
+  // オブジェクト中心座標（正規化→px）
+  const cx = (obj.x1 + obj.x2) / 2 * rect.width  + rect.left;
+  const cy = (obj.y1 + obj.y2) / 2 * rect.height + rect.top;
+
+  const getAngle = (clientX, clientY) => {
+    return Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI;
+  };
+
+  const src0 = e.touches ? e.touches[0] : e;
+  let startAngle = getAngle(src0.clientX, src0.clientY);
+  let startRot   = obj.rotation || 0;
+
+  const onMove = (ev) => {
+    const src = ev.touches ? ev.touches[0] : ev;
+    const angle = getAngle(src.clientX, src.clientY);
+    obj.rotation = startRot + (angle - startAngle);
+    renderSVGObjects(key);
+  };
+  const onEnd = () => {
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('touchend',  onEnd);
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup',   onEnd);
+  };
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend',  onEnd);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup',   onEnd);
 }
 
 // ===== 描画エンジン =====
@@ -1245,14 +1581,14 @@ function setupDrawCanvas(key, imgData) {
     canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none;';
     container.appendChild(canvas);
 
-    // SVGオーバーレイ（直線・引出線用）
+    // SVGオーバーレイ
     const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.id = `drawsvg-${key}`;
     svg.setAttribute('class','draw-svg-overlay');
     svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;';
     container.appendChild(svg);
 
-    // プレビューSVG（描画中の仮線）
+    // プレビューSVG
     const svgPreview = document.createElementNS('http://www.w3.org/2000/svg','svg');
     svgPreview.id = `drawsvg-preview-${key}`;
     svgPreview.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
@@ -1279,13 +1615,18 @@ function setupDrawCanvas(key, imgData) {
         s.onload = () => { ctx.drawImage(s,0,0,canvas.width,canvas.height); };
         s.src = drawState[key].savedPenData;
       }
-      // SVGオブジェクト再描画
       renderSVGObjects(key);
     };
     setTimeout(resizeCanvas, 120);
     window.addEventListener('resize', () => resizeCanvas());
 
     setupDrawEvents(canvas, svg, key);
+
+    // ツールバードラッグ・ピンチズームを初期化
+    setTimeout(() => {
+      setupToolbarDrag(key);
+      setupPinchZoom(key);
+    }, 200);
   };
   img.src = imgData;
 }
@@ -1470,6 +1811,13 @@ function renderSVGObjects(key) {
   const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
   const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
 
+  // 選択中オブジェクトがあれば編集パネルを開く
+  if (ds.selectedId) {
+    openEditPanel(key);
+  } else {
+    closeEditPanel();
+  }
+
   ds.objects.forEach(obj => {
     const x1 = obj.x1 * W, y1 = obj.y1 * H;
     const x2 = obj.x2 * W, y2 = obj.y2 * H;
@@ -1482,16 +1830,10 @@ function renderSVGObjects(key) {
 
     // 回転: オブジェクトの中心を軸に回転
     const rot = obj.rotation || 0;
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2;
     if (rot !== 0) {
-      const cx = (x1 + x2) / 2;
-      const cy = (y1 + y2) / 2;
       g.setAttribute('transform', `rotate(${rot} ${cx} ${cy})`);
-    }
-
-    // 選択時に回転入力欄を同期
-    if (isSel) {
-      const input = document.getElementById(`rot-input-${key}`);
-      if (input) input.value = Math.round(rot);
     }
 
     if (obj.type === 'line' || obj.type === 'arrow') {
@@ -1585,6 +1927,26 @@ function renderSVGObjects(key) {
     }
 
     svg.appendChild(g);
+
+    // 選択時: 回転ハンドルをSVGのforeignObjectで表示
+    if (isSel) {
+      const hx = cx;
+      const hy = Math.min(y1, y2) - 28;
+      const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+      fo.setAttribute('x', hx - 12);
+      fo.setAttribute('y', hy - 12);
+      fo.setAttribute('width', 24);
+      fo.setAttribute('height', 24);
+      fo.setAttribute('overflow', 'visible');
+      fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml"
+        style="width:24px;height:24px;background:var(--accent);border-radius:50%;
+               border:2px solid #fff;display:flex;align-items:center;justify-content:center;
+               font-size:11px;color:#fff;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.4);
+               touch-action:none;"
+        onmousedown="startRotateHandle(event,'${key}')"
+        ontouchstart="startRotateHandle(event,'${key}')">↻</div>`;
+      svg.appendChild(fo);
+    }
   });
 }
 
