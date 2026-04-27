@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.0.7</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.0.8</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1394,15 +1394,13 @@ function setupToolbarDrag(key) {
 function setupPinchZoom(key) {
   const wrapper = document.getElementById(`zoom-wrapper-${key}`);
   const inner   = document.getElementById(`zoom-inner-${key}`);
+  const canvas  = document.getElementById(`drawcanvas-${key}`);
   if (!wrapper || !inner) return;
 
   let scale = 1, lastScale = 1;
   let initDist = 0;
   let isPinching = false;
-  // ズーム原点（wrapper左上からの距離）
   let originX = 0, originY = 0;
-  // パン量
-  let panX = 0, panY = 0, lastPanX = 0, lastPanY = 0;
 
   const getDist = (t) => {
     const dx = t[0].clientX - t[1].clientX;
@@ -1412,45 +1410,45 @@ function setupPinchZoom(key) {
 
   const applyTransform = () => {
     inner.style.transformOrigin = `${originX}px ${originY}px`;
-    inner.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    inner.style.transform = `scale(${scale})`;
   };
 
+  // wrapperレベルで2本指のみ処理
+  // （1本指はcanvasのイベントに任せる）
   wrapper.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) {
-      isPinching = true;
-      initDist  = getDist(e.touches);
-      lastScale = scale;
-      lastPanX  = panX;
-      lastPanY  = panY;
-      // ピンチの中心点をズーム原点に設定
-      const wRect = wrapper.getBoundingClientRect();
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      originX = (midX - wRect.left - panX) / scale;
-      originY = (midY - wRect.top  - panY) / scale;
-      e.preventDefault();
-    } else {
-      isPinching = false;
-    }
+    if (e.touches.length !== 2) return;
+    isPinching = true;
+    initDist   = getDist(e.touches);
+    lastScale  = scale;
+    const wRect = wrapper.getBoundingClientRect();
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    originX = (midX - wRect.left) / scale;
+    originY = (midY - wRect.top)  / scale;
+    e.stopPropagation(); // canvasへの伝播を止める
+    e.preventDefault();
   }, { passive: false });
 
   wrapper.addEventListener('touchmove', (e) => {
-    if (isPinching && e.touches.length === 2) {
-      const newDist = getDist(e.touches);
-      scale = Math.min(5, Math.max(1, lastScale * newDist / initDist));
-      applyTransform();
-      e.preventDefault();
-    }
+    if (!isPinching || e.touches.length !== 2) return;
+    const newDist = getDist(e.touches);
+    scale = Math.min(5, Math.max(1, lastScale * newDist / initDist));
+    applyTransform();
+    // drawingフラグをリセット（ピンチ中は描画しない）
+    if (drawState[key]) drawState[key].drawing = false;
+    e.stopPropagation();
+    e.preventDefault();
   }, { passive: false });
 
   wrapper.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) {
       isPinching = false;
       if (scale <= 1) {
-        scale = 1; panX = 0; panY = 0;
-        originX = 0; originY = 0;
+        scale = 1; originX = 0; originY = 0;
         applyTransform();
       }
+      // drawingフラグをリセット
+      if (drawState[key]) drawState[key].drawing = false;
     }
   });
 }
