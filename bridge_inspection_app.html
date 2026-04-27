@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.2</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.6</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -908,34 +908,48 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
     // 写真番号エントリを抽出（径間番号も取得）
     const photoEntries = [];
     for (let i = 0; i < items.length; i++) {
-      if (items[i].str === '写真番号') {
-        for (let j = i + 1; j < Math.min(i + 6, items.length); j++) {
-          const nxt = items[j];
-          if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
-          if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
-            const no = parseInt(nxt.str);
-            // 径間番号を取得
-            let span = 1;
-            for (let k = j + 1; k < Math.min(j + 6, items.length); k++) {
-              if (items[k].str === '径間番号') {
-                for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
-                  if (/^\d+$/.test(items[l].str)) {
-                    span = parseInt(items[l].str);
-                    break;
-                  }
-                }
-                break;
-              }
-            }
-            photoEntries.push({
-              no, span,
-              tx: items[i].x / W,
-              ty: items[i].y / H,
-            });
+      if (items[i].str !== '写真番号') continue;
+      const tx = items[i].x / W;
+      const ty = items[i].y / H;
+
+      // 写真番号の後の数字を探す
+      // ※「撮影年月日」はbreakしない（同じ行に混在するため）
+      let no = null;
+      for (let j = i + 1; j < Math.min(i + 8, items.length); j++) {
+        const nxt = items[j];
+        if (nxt.str === '写真番号') break; // 次の写真番号が来たら終了
+        if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
+          // 写真番号と同じ行（y差0.05以内）の数字のみ採用
+          if (Math.abs(nxt.y / H - ty) < 0.05) {
+            no = parseInt(nxt.str);
             break;
           }
         }
       }
+      if (!no) continue;
+
+      // 径間番号を取得: 同じ列（x差0.08以内）で最も近い「径間番号」テキストを検索
+      let span = 1;
+      let bestDist = 9999;
+      for (let k = 0; k < items.length; k++) {
+        if (items[k].str !== '径間番号') continue;
+        const kx = items[k].x / W;
+        const ky = items[k].y / H;
+        if (Math.abs(kx - tx) < 0.08 && Math.abs(ky - ty) < 0.15) {
+          const dist = Math.abs(ky - ty);
+          if (dist < bestDist) {
+            bestDist = dist;
+            for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
+              if (/^\d+$/.test(items[l].str)) {
+                span = parseInt(items[l].str);
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      photoEntries.push({ no, span, tx, ty });
     }
 
     if (photoEntries.length === 0) return slots;
@@ -1300,6 +1314,7 @@ async function renderDrawViewer(item, tabs, content) {
           <button class="draw-tool-btn"        id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
           <button class="draw-tool-btn"        id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
           <button class="draw-tool-btn"        id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
+          <button class="draw-tool-btn"        id="tool-square-${drawKey}"  onclick="setTool('square','${drawKey}')">■ 正方形</button>
           <button class="draw-tool-btn"        id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
           <button class="draw-tool-btn"        id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
           <button class="draw-tool-btn eraser" id="tool-eraser-${drawKey}"  onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
@@ -1328,6 +1343,7 @@ async function renderDrawViewer(item, tabs, content) {
           <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
           <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
           <span class="draw-toolbar-sep"></span>
+          <span style="font-size:10px;color:var(--text2);white-space:nowrap">回転(選択後):</span>
           <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)">◁◁-10°</button>
           <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)">◁-1°</button>
           <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)">+1°▷</button>
@@ -1592,7 +1608,7 @@ function setupDrawCanvas(key, imgData) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.id = `drawsvg-${key}`;
     svg.setAttribute('class','draw-svg-overlay');
-    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;';
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;';
     container.appendChild(svg);
 
     // プレビューSVG
@@ -1690,6 +1706,7 @@ function setupDrawEvents(canvas, svg, key) {
 
     ds.drawing = true;
     ds.startX = pos.nx; ds.startY = pos.ny;
+    ds.lastX  = pos.nx; ds.lastY  = pos.ny; // 最後の座標を初期化
 
     if (ds.tool === 'pen' || ds.tool === 'eraser') {
       ds.penHistory.push(canvas.toDataURL());
@@ -1707,6 +1724,8 @@ function setupDrawEvents(canvas, svg, key) {
     const ds = drawState[key];
     if (!ds.drawing) return;
     const pos = getPos(e);
+    // 常に最後の座標を保存
+    ds.lastX = pos.nx; ds.lastY = pos.ny;
 
     if (ds.tool === 'pen') {
       const ctx = canvas.getContext('2d');
@@ -1728,8 +1747,18 @@ function setupDrawEvents(canvas, svg, key) {
     } else if (ds.tool === 'line' || ds.tool === 'arrow') {
       // プレビュー線
       renderPreviewLine(key, ds.startX, ds.startY, pos.nx, pos.ny, ds.color, ds.sizeMM, ds.tool === 'arrow');
-    } else if (ds.tool === 'rect' || ds.tool === 'ellipse') {
-      renderPreviewShape(key, ds.startX, ds.startY, pos.nx, pos.ny, ds.color, ds.sizeMM, ds.tool, ds.pattern);
+    } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
+      // squareの場合は正方形プレビュー
+      let ex2 = pos.nx, ey2 = pos.ny;
+      if (ds.tool === 'square') {
+        const dw = Math.abs(pos.nx - ds.startX);
+        const dh = Math.abs(pos.ny - ds.startY);
+        const size = Math.min(dw, dh);
+        ex2 = ds.startX + (pos.nx > ds.startX ? size : -size);
+        ey2 = ds.startY + (pos.ny > ds.startY ? size : -size);
+      }
+      const shapeType = ds.tool === 'square' ? 'rect' : ds.tool;
+      renderPreviewShape(key, ds.startX, ds.startY, ex2, ey2, ds.color, ds.sizeMM, shapeType, ds.pattern);
     } else if (ds.tool === 'select' && ds.selectedId) {
       // 選択中オブジェクトを移動
       const obj = ds.objects.find(o => o.id === ds.selectedId);
@@ -1746,16 +1775,22 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ終了 =====
   const onEnd = (e) => {
-    // 残っている指が1本以上あればスキップ
     if (e.touches && e.touches.length >= 1) return;
     const ds = drawState[key];
     if (!ds.drawing) return;
     ds.drawing = false;
 
-    const rect = canvas.getBoundingClientRect();
-    const src  = e.changedTouches ? e.changedTouches[0] : e;
-    const ex   = (src.clientX - rect.left) / rect.width;
-    const ey   = (src.clientY - rect.top)  / rect.height;
+    // changedTouchesから座標取得、なければlastX/lastYを使用
+    let ex = ds.lastX ?? ds.startX;
+    let ey = ds.lastY ?? ds.startY;
+    try {
+      const rect = canvas.getBoundingClientRect();
+      const src  = e.changedTouches?.[0] ?? e;
+      if (src && src.clientX !== undefined) {
+        ex = (src.clientX - rect.left) / rect.width;
+        ey = (src.clientY - rect.top)  / rect.height;
+      }
+    } catch(err) {}
 
     if (ds.tool === 'line' || ds.tool === 'arrow') {
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
@@ -1769,22 +1804,26 @@ function setupDrawEvents(canvas, svg, key) {
       clearPreviewLine(key);
       renderSVGObjects(key);
 
-    } else if (ds.tool === 'rect' || ds.tool === 'ellipse') {
+    } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
       if (dist > 0.01) {
-        // ★ 正方形アシスト: 縦横の差が小さい場合は正方形にスナップ
         let x2 = ex, y2 = ey;
         const dw = Math.abs(ex - ds.startX);
         const dh = Math.abs(ey - ds.startY);
-        const ratio = Math.min(dw, dh) / Math.max(dw, dh);
-        if (ratio > 0.85) {
-          // 85%以上の比率なら正方形にスナップ
-          const size = Math.min(dw, dh);
-          x2 = ds.startX + (ex > ds.startX ? size : -size);
-          y2 = ds.startY + (ey > ds.startY ? size : -size);
+        if (dw > 0 && dh > 0) {
+          // squareツールは常に正方形、rectは85%以上でスナップ
+          const forceSquare = ds.tool === 'square';
+          const ratio = Math.min(dw, dh) / Math.max(dw, dh);
+          if (forceSquare || ratio > 0.85) {
+            const size = Math.min(dw, dh);
+            x2 = ds.startX + (ex > ds.startX ? size : -size);
+            y2 = ds.startY + (ey > ds.startY ? size : -size);
+          }
         }
+        // squareもrectとして保存
+        const type = ds.tool === 'square' ? 'rect' : ds.tool;
         ds.objects.push({
-          id: Date.now(), type: ds.tool,
+          id: Date.now(), type,
           x1: ds.startX, y1: ds.startY, x2, y2,
           color: ds.color, sizeMM: ds.sizeMM, pattern: ds.pattern
         });
@@ -1871,6 +1910,8 @@ function renderSVGObjects(key) {
 
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class','svg-obj' + (isSel ? ' selected' : ''));
+    // 選択ツール時のみpointer-eventsを有効化
+    g.style.pointerEvents = ds.tool === 'select' ? 'auto' : 'none';
 
     // 回転: オブジェクトの中心を軸に回転
     const rot = obj.rotation || 0;
@@ -1977,9 +2018,10 @@ function renderSVGObjects(key) {
       const hx = cx;
       const hy = Math.min(y1, y2) - 28;
 
-      // 回転ハンドル（↻）
+      // 回転ハンドル（↻）- pointer-events:autoで個別に有効化
       const rotGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
       rotGroup.style.cursor = 'grab';
+      rotGroup.style.pointerEvents = 'auto';
 
       const rotCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
       rotCircle.setAttribute('cx', hx);
@@ -2001,6 +2043,8 @@ function renderSVGObjects(key) {
       rotGroup.appendChild(rotText);
 
       // タッチ・マウスイベント（stopPropagationで選択解除を防ぐ）
+      // touch-action:noneで確実にタッチを受け取る
+      rotGroup.setAttribute('touch-action', 'none');
       const onRotStart = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -2008,11 +2052,22 @@ function renderSVGObjects(key) {
       };
       rotGroup.addEventListener('mousedown',  onRotStart);
       rotGroup.addEventListener('touchstart', onRotStart, { passive: false });
+      // ヒットエリアを広げる（透明な大きなcircle）
+      const rotHit = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      rotHit.setAttribute('cx', hx);
+      rotHit.setAttribute('cy', hy);
+      rotHit.setAttribute('r', 22);
+      rotHit.setAttribute('fill', 'transparent');
+      rotHit.setAttribute('stroke', 'none');
+      rotHit.addEventListener('mousedown',  onRotStart);
+      rotHit.addEventListener('touchstart', onRotStart, { passive: false });
+      rotGroup.appendChild(rotHit);
       svg.appendChild(rotGroup);
 
-      // 編集ボタン（✏️）
+      // 編集ボタン（✏️）- pointer-events:autoで個別に有効化
       const editGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
       editGroup.style.cursor = 'pointer';
+      editGroup.style.pointerEvents = 'auto';
 
       const editCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
       editCircle.setAttribute('cx', hx + 36);
@@ -2128,7 +2183,7 @@ function setTool(tool, key) {
   if (!ds) return;
   ds.tool = tool;
   ds.selectedId = null;
-  ['pen','line','arrow','rect','ellipse','select','eraser'].forEach(t => {
+  ['pen','line','arrow','rect','square','ellipse','select','eraser'].forEach(t => {
     document.getElementById(`tool-${t}-${key}`)?.classList.toggle('active', t === tool);
   });
   const canvas = document.getElementById(`drawcanvas-${key}`);
