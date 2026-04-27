@@ -1,0 +1,2267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>橋梁点検アプリ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #242736;
+    --border: #2e3347;
+    --accent: #4a9eff;
+    --accent2: #ff6b35;
+    --green: #2ecc71;
+    --red: #e74c3c;
+    --yellow: #f1c40f;
+    --text: #e8eaf0;
+    --text2: #8890a4;
+    --font: 'Hiragino Sans', 'Meiryo', sans-serif;
+    --radius: 12px;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; overflow-x: hidden; }
+  
+  /* ===== TOP NAV ===== */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: rgba(15,17,23,0.95); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; height: 56px;
+  }
+  .topbar-back {
+    background: var(--surface2); border: none; color: var(--text);
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; cursor: pointer; flex-shrink: 0;
+  }
+  .topbar-title { font-size: 15px; font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar-badge {
+    font-size: 11px; padding: 3px 8px; border-radius: 20px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .badge-survey { background: rgba(74,158,255,0.2); color: var(--accent); border: 1px solid rgba(74,158,255,0.4); }
+  .badge-inspect { background: rgba(255,107,53,0.2); color: var(--accent2); border: 1px solid rgba(255,107,53,0.4); }
+
+  /* ===== SCREENS ===== */
+  .screen-wrapper {
+    position: fixed; inset: 0; overflow: hidden;
+  }
+  .screen {
+    position: absolute; inset: 0;
+    padding-top: 56px;
+    overflow-y: auto; overflow-x: hidden;
+    background: var(--bg);
+    transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+    min-height: 100%;
+    /* デフォルト: 右に隠れている */
+    transform: translateX(100%);
+  }
+  /* ホームだけ最初から表示 */
+  #screen-home {
+    transform: translateX(0);
+  }
+  /* アクティブ画面 */
+  .screen.is-active {
+    transform: translateX(0) !important;
+    pointer-events: auto;
+  }
+  /* 左に退場した画面 */
+  .screen.is-behind {
+    transform: translateX(-30%) !important;
+    pointer-events: none;
+  }
+
+  /* ===== HOME ===== */
+  #screen-home {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 100vh; padding: 32px 20px;
+    padding-top: 32px !important;
+  }
+  .home-logo {
+    width: 72px; height: 72px; border-radius: 20px;
+    background: linear-gradient(135deg, var(--accent), #1a6fd4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px; margin-bottom: 20px;
+    box-shadow: 0 8px 32px rgba(74,158,255,0.3);
+  }
+  .home-title { font-size: 22px; font-weight: 800; margin-bottom: 6px; text-align: center; }
+  .home-sub { color: var(--text2); font-size: 13px; margin-bottom: 40px; text-align: center; }
+
+  /* PDF読み込みエリア */
+  .upload-zone {
+    width: 100%; max-width: 400px;
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 28px 20px; text-align: center; cursor: pointer;
+    transition: all 0.2s; margin-bottom: 32px;
+    background: var(--surface);
+  }
+  .upload-zone:hover, .upload-zone.dragover { border-color: var(--accent); background: rgba(74,158,255,0.05); }
+  .upload-zone .icon { font-size: 32px; margin-bottom: 10px; }
+  .upload-zone p { color: var(--text2); font-size: 13px; line-height: 1.6; }
+  .upload-zone strong { color: var(--text); }
+  #file-input { display: none; }
+
+  .pdf-loaded-info {
+    width: 100%; max-width: 400px;
+    background: var(--surface); border: 1px solid var(--green);
+    border-radius: var(--radius); padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 32px;
+  }
+  .pdf-loaded-info .check { color: var(--green); font-size: 22px; }
+  .pdf-loaded-info .info { flex: 1; }
+  .pdf-loaded-info .name { font-size: 13px; font-weight: 700; }
+  .pdf-loaded-info .pages { font-size: 12px; color: var(--text2); }
+  .pdf-loaded-info .remove { color: var(--text2); font-size: 18px; cursor: pointer; padding: 4px; }
+
+  .mode-buttons { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 400px; }
+  .mode-btn {
+    border: none; border-radius: var(--radius); padding: 20px 24px;
+    cursor: pointer; display: flex; align-items: center; gap: 16px;
+    transition: all 0.2s; text-align: left;
+  }
+  .mode-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .mode-btn-survey { background: linear-gradient(135deg, #1a3a6e, #1e4a8a); border: 1px solid rgba(74,158,255,0.3); }
+  .mode-btn-survey:not(:disabled):hover { background: linear-gradient(135deg, #1e4a8a, #2255a0); transform: translateY(-1px); }
+  .mode-btn-inspect { background: linear-gradient(135deg, #5a2a10, #7a3a18); border: 1px solid rgba(255,107,53,0.3); }
+  .mode-btn-inspect:not(:disabled):hover { background: linear-gradient(135deg, #7a3a18, #8a4020); transform: translateY(-1px); }
+  .mode-btn-icon { font-size: 32px; flex-shrink: 0; }
+  .mode-btn-text h3 { font-size: 17px; font-weight: 800; margin-bottom: 4px; }
+  .mode-btn-text p { font-size: 12px; color: var(--text2); line-height: 1.5; }
+  .mode-btn-survey .mode-btn-text h3 { color: var(--accent); }
+  .mode-btn-inspect .mode-btn-text h3 { color: var(--accent2); }
+
+  /* ===== MENU ===== */
+  #screen-menu { padding: 72px 0 20px; }
+  .menu-header { padding: 16px 20px 20px; }
+  .menu-header h2 { font-size: 20px; font-weight: 800; }
+  .menu-header p { color: var(--text2); font-size: 13px; margin-top: 4px; }
+
+  .menu-list { padding: 0 16px; display: flex; flex-direction: column; gap: 10px; }
+  .menu-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+    display: flex; align-items: center; gap: 14px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .menu-item:hover { background: var(--surface2); border-color: var(--accent); }
+  .menu-item-icon { font-size: 24px; flex-shrink: 0; width: 40px; text-align: center; }
+  .menu-item-body { flex: 1; }
+  .menu-item-title { font-size: 14px; font-weight: 700; }
+  .menu-item-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .menu-item-tag {
+    font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .tag-view { background: rgba(74,158,255,0.15); color: var(--accent); }
+  .tag-draw { background: rgba(46,204,113,0.15); color: var(--green); }
+  .tag-photo { background: rgba(241,196,15,0.15); color: var(--yellow); }
+  .tag-arrow { color: var(--text2); font-size: 16px; }
+
+  /* 写真チェック進捗 */
+  .photo-progress {
+    margin: 0 16px 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px;
+  }
+  .photo-progress h4 { font-size: 13px; font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .progress-bar-wrap { background: var(--surface2); border-radius: 4px; height: 8px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--green), #27ae60); border-radius: 4px; transition: width 0.4s; }
+  .progress-label { font-size: 11px; color: var(--text2); margin-top: 6px; }
+
+  /* ===== VIEWER ===== */
+  #screen-viewer { padding: 56px 0 0; }
+  .viewer-tabs {
+    position: fixed; top: 56px; left: 0; right: 0; z-index: 90;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    display: flex; overflow-x: auto; scrollbar-width: none; padding: 0 8px;
+  }
+  .viewer-tabs::-webkit-scrollbar { display: none; }
+  .viewer-tab {
+    flex-shrink: 0; padding: 10px 14px; font-size: 12px; font-weight: 600;
+    color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent;
+    white-space: nowrap; transition: all 0.15s;
+  }
+  .viewer-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .viewer-content { padding-top: 44px; }
+  .viewer-section { display: none; }
+  .viewer-section.active { display: block; }
+
+  /* ページビューア */
+  .page-viewer {
+    padding: 12px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .page-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .page-card-header {
+    padding: 10px 14px; background: var(--surface2);
+    font-size: 12px; font-weight: 700; color: var(--text2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .page-card canvas { display: block; width: 100%; height: auto; }
+  .page-loading {
+    padding: 40px; text-align: center; color: var(--text2); font-size: 13px;
+  }
+  .loading-spinner {
+    width: 32px; height: 32px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ===== 書き込みビューア ===== */
+  .draw-container {
+    position: relative; margin: 12px;
+    border-radius: var(--radius); overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .draw-base { display: block; width: 100%; height: auto; }
+  .draw-canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    touch-action: none; cursor: crosshair;
+  }
+  .draw-toolbar {
+    position: sticky; top: 100px; z-index: 80;
+    margin: 0 12px 8px; background: var(--surface2);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .draw-tool-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 7px 12px;
+    font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .draw-tool-btn.active, .draw-tool-btn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .draw-tool-btn.eraser.active { background: var(--red); border-color: var(--red); }
+  .color-btn {
+    width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+  }
+  .color-btn.active { border-color: #fff; transform: scale(1.2); }
+  .size-select {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 6px 8px; font-size: 12px;
+  }
+  .draw-save-btn {
+    margin-left: auto; background: var(--green); border: none; color: #fff;
+    border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; gap: 5px;
+  }
+  .draw-toolbar-sep { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+  .size-btn {
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text2); border-radius: 6px; padding: 5px 8px;
+    font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .size-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .draw-svg-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+  .draw-svg-overlay.interactive { pointer-events: auto; }
+  .svg-obj { cursor: pointer; }
+  .svg-obj.selected line, .svg-obj.selected polyline { stroke: #60d0ff !important; }
+  .svg-obj-hit { stroke: transparent; stroke-width: 14px; fill: none; cursor: pointer; }
+
+  /* ===== 写真セクション ===== */
+  .photo-section { padding: 12px; }
+  .photo-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .photo-section-header h3 { font-size: 14px; font-weight: 700; }
+
+  /* 前回/今回 カード */
+  .photo-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; margin-bottom: 10px;
+  }
+  .photo-card-header {
+    padding: 8px 12px; background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .photo-card-title {
+    font-size: 12px; font-weight: 700; color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .photo-card-badge-req {
+    font-size: 9px; background: var(--yellow); color: #000;
+    padding: 1px 5px; border-radius: 4px; font-weight: 800;
+  }
+  .photo-card-badge-non {
+    font-size: 9px; background: var(--accent); color: #fff;
+    padding: 1px 5px; border-radius: 4px; font-weight: 800;
+  }
+  .photo-card-status {
+    font-size: 10px; color: var(--text2);
+  }
+  .photo-card-status.done { color: var(--green); font-weight: 700; }
+
+  /* 前回/今回 横並び */
+  .photo-pair {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  }
+  .photo-half {
+    position: relative; aspect-ratio: 4/3; overflow: hidden;
+  }
+  .photo-half + .photo-half { border-left: 1px solid var(--border); }
+  .photo-half img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo-half-label {
+    position: absolute; top: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.55); font-size: 9px; font-weight: 700;
+    padding: 3px 6px; color: var(--text2); text-align: center;
+  }
+  .photo-half-label.prev { color: #aab; }
+  .photo-half-label.curr { color: var(--accent); }
+
+  /* 今回撮影エリア（未撮影） */
+  .photo-half-shoot {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 5px;
+    background: rgba(74,158,255,0.06); cursor: pointer;
+    transition: background 0.15s;
+  }
+  .photo-half-shoot:active { background: rgba(74,158,255,0.18); }
+  .photo-half-shoot .cam-icon { font-size: 28px; line-height: 1; }
+  .photo-half-shoot .cam-hint {
+    font-size: 10px; color: var(--accent); font-weight: 700;
+  }
+
+  /* 今回撮影エリア（撮影済み） */
+  .photo-half-done { position: relative; width: 100%; height: 100%; cursor: pointer; }
+  .photo-half-done img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .photo-half-retake {
+    position: absolute; inset: 0; background: rgba(0,0,0,0);
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s; opacity: 0;
+  }
+  .photo-half-done:active .photo-half-retake { background: rgba(0,0,0,0.45); opacity: 1; }
+  .photo-half-retake span {
+    background: rgba(74,158,255,0.9); color: #fff;
+    font-size: 10px; font-weight: 700; padding: 5px 10px; border-radius: 16px;
+  }
+  .photo-half-check {
+    position: absolute; bottom: 5px; right: 5px;
+    background: var(--green); color: #fff; font-size: 11px; font-weight: 700;
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .photo-half-delete {
+    position: absolute; top: 5px; right: 5px;
+    background: rgba(231,76,60,0.9); color: #fff; font-size: 12px;
+    width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; font-weight: 700; z-index: 2;
+  }
+
+  /* 前回写真なし */
+  .photo-half-noprev {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 4px;
+    background: var(--surface2);
+  }
+  .photo-half-noprev span { font-size: 20px; opacity: 0.4; }
+  .photo-half-noprev p { font-size: 9px; color: var(--text2); text-align: center; }
+
+  /* 前回調書プレビュー（写真セクション内） */
+  .prev-record-section {
+    margin-bottom: 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .prev-record-header {
+    padding: 10px 14px; background: var(--surface2);
+    font-size: 12px; font-weight: 700; color: var(--text2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+  }
+  .prev-record-body { display: none; }
+  .prev-record-body.open { display: block; }
+
+  /* NON / 損傷 区分 */
+  .photo-filter-tabs {
+    display: flex; gap: 8px; margin-bottom: 12px;
+  }
+  .photo-filter-tab {
+    flex: 1; padding: 8px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text2); font-size: 12px; font-weight: 700;
+    cursor: pointer; text-align: center; transition: all 0.15s;
+  }
+  .photo-filter-tab.active { background: var(--surface2); color: var(--text); border-color: var(--accent); }
+
+  /* 撮影忘れ警告 */
+  .missing-alert {
+    background: rgba(231,76,60,0.1); border: 1px solid rgba(231,76,60,0.4);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px;
+    display: none;
+  }
+  .missing-alert.show { display: flex; align-items: flex-start; gap: 10px; }
+  .missing-alert .alert-icon { font-size: 20px; flex-shrink: 0; }
+  .missing-alert p { font-size: 12px; line-height: 1.6; }
+  .missing-alert strong { color: var(--red); }
+
+  /* ===== ダウンロード ===== */
+  .download-section {
+    margin: 16px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .download-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+  .download-list { display: flex; flex-direction: column; gap: 8px; }
+  .download-item {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .download-item:hover { border-color: var(--accent); }
+  .download-item-icon { font-size: 22px; flex-shrink: 0; }
+  .download-item-body { flex: 1; }
+  .download-item-title { font-size: 13px; font-weight: 700; }
+  .download-item-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .download-btn {
+    background: var(--accent); border: none; color: #fff;
+    border-radius: 8px; padding: 7px 14px; font-size: 12px; font-weight: 700;
+    cursor: pointer; white-space: nowrap;
+  }
+
+  /* ===== トースト通知 ===== */
+  #toast {
+    position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 20px; border-radius: 20px;
+    font-size: 13px; font-weight: 600; z-index: 999;
+    opacity: 0; transition: all 0.3s; pointer-events: none; white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: var(--green); color: var(--green); }
+  #toast.error { border-color: var(--red); color: var(--red); }
+
+  /* ===== モーダル ===== */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+    z-index: 200; display: none; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; max-width: 400px; width: 100%; padding: 24px;
+  }
+  .modal h3 { font-size: 16px; font-weight: 800; margin-bottom: 8px; }
+  .modal p { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 20px; }
+  .modal-btns { display: flex; gap: 10px; }
+  .modal-btn {
+    flex: 1; padding: 12px; border-radius: 10px; border: none;
+    font-size: 14px; font-weight: 700; cursor: pointer;
+  }
+  .modal-btn-cancel { background: var(--surface2); color: var(--text); }
+  .modal-btn-ok { background: var(--accent); color: #fff; }
+
+  /* ===== ユーティリティ ===== */
+  .hidden { display: none !important; }
+  .divider { height: 1px; background: var(--border); margin: 8px 16px; }
+  .section-label {
+    padding: 16px 20px 8px; font-size: 11px; font-weight: 700;
+    color: var(--text2); letter-spacing: 0.08em; text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<!-- トップバー -->
+<div class="topbar" id="topbar" style="display:none">
+  <button class="topbar-back" id="topbar-back" onclick="goBack()">←</button>
+  <span class="topbar-title" id="topbar-title">橋梁点検</span>
+  <span class="topbar-badge" id="topbar-badge"></span>
+</div>
+
+<div class="screen-wrapper">
+
+<!-- ===== HOME ===== -->
+<div id="screen-home" class="screen active">
+  <div class="home-logo">🌉</div>
+  <div class="home-title">橋梁定期点検</div>
+  <div class="home-sub">現場点検支援アプリ</div>
+
+  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📄</div>
+    <strong>前回点検調書 PDF</strong>
+    <p>タップしてファイルを選択<br>または長押しでドロップ</p>
+  </div>
+  <input type="file" id="file-input" accept=".pdf" onchange="loadPDF(this)">
+
+  <div class="pdf-loaded-info hidden" id="pdf-loaded-info">
+    <span class="check">✅</span>
+    <div class="info">
+      <div class="name" id="pdf-name"></div>
+      <div class="pages" id="pdf-pages"></div>
+    </div>
+    <span class="remove" onclick="removePDF()">✕</span>
+  </div>
+
+  <div class="mode-buttons">
+    <button class="mode-btn mode-btn-survey" id="btn-survey" onclick="enterMode('survey')" disabled>
+      <span class="mode-btn-icon">🔍</span>
+      <div class="mode-btn-text">
+        <h3>踏 査</h3>
+        <p>径間別一般図・現地状況写真<br>部材番号図・状態把握・所見の確認</p>
+      </div>
+    </button>
+    <button class="mode-btn mode-btn-inspect" id="btn-inspect" onclick="enterMode('inspect')" disabled>
+      <span class="mode-btn-icon">📋</span>
+      <div class="mode-btn-text">
+        <h3>本 調 査</h3>
+        <p>損傷図・損傷写真の確認<br>フリーハンド記録・写真記録</p>
+      </div>
+    </button>
+  </div>
+</div>
+
+<!-- ===== MENU ===== -->
+<div id="screen-menu" class="screen">
+  <div class="menu-header">
+    <h2 id="menu-title"></h2>
+    <p id="menu-sub"></p>
+  </div>
+
+  <!-- 写真撮り忘れ進捗 -->
+  <div class="photo-progress" id="photo-progress-bar">
+    <h4>📸 写真記録の進捗</h4>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+    </div>
+    <div class="progress-label" id="progress-label">0 / 0 枚</div>
+  </div>
+
+  <div class="menu-list" id="menu-list"></div>
+  <div class="divider"></div>
+
+  <!-- ダウンロード -->
+  <div class="download-section">
+    <h3>💾 データ保存</h3>
+    <div class="download-list">
+      <div class="download-item" onclick="downloadDrawings()">
+        <span class="download-item-icon">🖊️</span>
+        <div class="download-item-body">
+          <div class="download-item-title">書き込み済み図面</div>
+          <div class="download-item-sub">フリーハンド記録を含む画像</div>
+        </div>
+        <button class="download-btn">保存</button>
+      </div>
+      <div class="download-item" onclick="downloadPhotos()">
+        <span class="download-item-icon">📷</span>
+        <div class="download-item-body">
+          <div class="download-item-title">撮影写真一括保存</div>
+          <div class="download-item-sub">施設別に整理してダウンロード</div>
+        </div>
+        <button class="download-btn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== VIEWER ===== -->
+<div id="screen-viewer" class="screen">
+  <div class="viewer-tabs" id="viewer-tabs"></div>
+  <div class="viewer-content" id="viewer-content"></div>
+</div>
+
+<!-- トースト -->
+<div id="toast"></div>
+
+<!-- モーダル -->
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modal-title">確認</h3>
+    <p id="modal-msg"></p>
+    <div class="modal-btns">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="modal-btn modal-btn-ok" id="modal-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- 隠しinput: カメラ -->
+<input type="file" id="camera-input" accept="image/*" capture="environment" style="display:none">
+
+</div><!-- /.screen-wrapper -->
+
+<script>
+// PDF.jsワーカー設定
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ===== STATE =====
+const state = {
+  mode: null,        // 'survey' | 'inspect'
+  pdfDoc: null,
+  pdfName: '',
+  totalPages: 0,
+  // ページキャッシュ: { pageNum: imageDataURL }
+  pageCache: {},
+  // 書き込みデータ: { sectionKey: dataURL }
+  drawings: {},
+  // 写真データ: { slotKey: { dataURL, label, required, isNON } }
+  photos: {},
+  currentSection: null,
+  currentPhotoTarget: null,
+};
+
+// ===== メニュー定義（mapKeyでページを動的解決）=====
+const MENU_SURVEY_BASE = [
+  { key:'s2',  mapKey:'s2',  icon:'📐', title:'その２　径間別一般図',   sub:'橋梁の平面・側面・断面図',  tags:['view'],         type:'pdf-viewer',  pages:[] },
+  { key:'s3',  mapKey:'s3',  icon:'📸', title:'その３　現地状況写真',   sub:'現地写真の確認・撮影',      tags:['view','photo'], type:'photo-view',  pages:[], photoRequired:true },
+  { key:'s4',  mapKey:'s4',  icon:'✏️', title:'その４　部材番号図',     sub:'フリーハンド書き込み可',    tags:['view','draw'],  type:'draw-viewer', pages:[] },
+  { key:'s5',  mapKey:'s5',  icon:'📋', title:'その５　状態把握の方法', sub:'近接目視等の記録',          tags:['view'],         type:'pdf-viewer',  pages:[] },
+  { key:'s6',  mapKey:'s6',  icon:'🔬', title:'その６　健全性の所見',   sub:'診断結果の確認',            tags:['view'],         type:'pdf-viewer',  pages:[] },
+];
+const MENU_INSPECT_EXTRA = [
+  { key:'s9',  mapKey:'s9',  icon:'🗺️', title:'その９　損傷図',         sub:'フリーハンド書き込み可',    tags:['view','draw'],  type:'draw-viewer', pages:[] },
+  { key:'s10', mapKey:'s10', icon:'📷', title:'その１０　損傷写真',     sub:'NON/損傷写真の確認・撮影',  tags:['view','photo'], type:'photo-view',  pages:[], photoRequired:true },
+];
+
+const MENU_SURVEY  = MENU_SURVEY_BASE;
+const MENU_INSPECT = [...MENU_SURVEY_BASE, ...MENU_INSPECT_EXTRA];
+
+// ===== 写真スロット（動的生成）=====
+// PDF読み込み後にbuildPhotoSlotsFromPDFで生成される
+let SURVEY_PHOTO_SLOTS = [];
+let DAMAGE_PHOTO_SLOTS = [];
+
+// PDFのテキストから写真番号・部材名・ページを抽出してスロットを生成
+async function buildPhotoSlotsFromPDF(pdf, pageMap) {
+  SURVEY_PHOTO_SLOTS = [];
+  DAMAGE_PHOTO_SLOTS = [];
+
+  // === その３ 現地状況写真（ページ単位でマッチング）===
+  const s3Pages = pageMap['s3'] || [];
+  for (const pnum of s3Pages) {
+    const slots = await extractPhotoSlotsFromPage(pdf, pnum, 's');
+    SURVEY_PHOTO_SLOTS.push(...slots);
+  }
+  SURVEY_PHOTO_SLOTS.sort((a, b) => a.prevNo - b.prevNo);
+
+  // === その１０ 損傷写真（全ページ一括マッチング）===
+  // その10はページをまたいで写真番号テキストと画像が対応するため一括処理
+  const s10Pages = pageMap['s10'] || [];
+  const damageSlots = await extractPhotoSlotsMultiPage(pdf, s10Pages, 'd');
+  DAMAGE_PHOTO_SLOTS.push(...damageSlots);
+  DAMAGE_PHOTO_SLOTS.sort((a, b) => a.prevNo - b.prevNo);
+  DAMAGE_PHOTO_SLOTS.forEach(s => { s.isNON = s.prevNo >= 1000; });
+}
+
+// 複数ページをまとめて処理（ページをまたいだマッチングに対応）
+async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
+  if (pageNums.length === 0) return [];
+
+  // 全ページから写真番号テキストと画像座標を収集
+  // ページ番号をy座標オフセットとして使用（仮想的な縦長ページとして扱う）
+  const allEntries = []; // { no, tx, globalY, pnum }
+  const allImages  = []; // { x, y, w, h, pnum, crop }
+
+  for (let pi = 0; pi < pageNums.length; pi++) {
+    const pnum = pageNums[pi];
+    const page = await pdf.getPage(pnum);
+    const vp   = page.getViewport({ scale: 1 });
+    const W = vp.width, H = vp.height;
+
+    // テキスト取得
+    const tc = await page.getTextContent();
+    const items = tc.items
+      .filter(i => i.str && i.str.trim())
+      .map(i => ({ str: i.str.trim(), x: i.transform[4], y: H - i.transform[5] }))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+
+    // 写真番号エントリ収集
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].str === '写真番号') {
+        for (let j = i + 1; j < Math.min(i + 6, items.length); j++) {
+          const nxt = items[j];
+          if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
+          if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
+            allEntries.push({
+              no: parseInt(nxt.str),
+              tx: items[i].x / W,
+              globalY: pi + items[i].y / H, // ページオフセット込みのY
+              pnum,
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    // 画像座標収集
+    const imgCoords = await getPageImageCoords(page, W, H);
+    for (const img of imgCoords) {
+      allImages.push({
+        ...img,
+        globalY: pi + img.y, // ページオフセット込みのY
+        pnum,
+      });
+    }
+  }
+
+  // globalY順でソート
+  allEntries.sort((a, b) => a.globalY - b.globalY || a.tx - b.tx);
+  allImages.sort((a, b) => a.globalY - b.globalY || a.x - b.x);
+
+  // 列優先・最近傍マッチング（ページをまたいで検索）
+  const used = new Set();
+  const slots = [];
+
+  for (const entry of allEntries) {
+    let best = null, bestScore = 9999;
+
+    for (let idx = 0; idx < allImages.length; idx++) {
+      if (used.has(idx)) continue;
+      const img = allImages[idx];
+
+      // 同じ列か（x差0.12以内）
+      if (Math.abs(img.x - entry.tx) >= 0.12) continue;
+
+      // globalY差（上下どちらも許容、ただし1ページ分以上は無視）
+      const dy = Math.abs(img.globalY - entry.globalY);
+      if (dy > 1.0) continue;
+
+      if (dy < bestScore) { bestScore = dy; best = idx; }
+    }
+
+    if (best !== null) {
+      used.add(best);
+      const img = allImages[best];
+      const isNON = entry.no >= 1000;
+      slots.push({
+        key: `${prefix}p${img.pnum}_${entry.no}`,
+        label: `No.${entry.no}`,
+        required: true, isNON,
+        prevPage: img.pnum,  // 画像が実際にあるページを使用
+        prevNo: entry.no,
+        crop: { x: img.x, y: img.y, w: img.w, h: img.h },
+      });
+    }
+  }
+
+  return slots;
+}
+
+// 1ページから写真スロットを抽出（その3専用）
+async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
+  const slots = [];
+  try {
+    const page = await pdf.getPage(pnum);
+    const vp   = page.getViewport({ scale: 1 });
+    const W = vp.width, H = vp.height;
+
+    // --- テキスト取得（写真番号と対応メモを抽出）---
+    const tc = await page.getTextContent();
+    // アイテムをy昇順（上から下）、同y内でx昇順に並べる
+    const items = tc.items
+      .filter(i => i.str && i.str.trim())
+      .map(i => ({
+        str: i.str.trim(),
+        x: i.transform[4],
+        // PDF座標系: y=0が下端 → スクリーン座標に変換
+        y: H - i.transform[5],
+      }))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+
+    // 写真番号エントリを抽出
+    // 「写真番号」テキストの直後に来る数字を取得
+    const photoEntries = []; // { no, tx, ty, memo }
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].str === '写真番号') {
+        // 次の数字ワードを探す（最大5アイテム先まで）
+        for (let j = i + 1; j < Math.min(i + 6, items.length); j++) {
+          const nxt = items[j];
+          // 他のキーワードが来たら終了
+          if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
+          // 純粋な整数（写真番号）
+          if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
+            const no = parseInt(nxt.str);
+            // 「写真番号」テキスト自体の座標を記録
+            photoEntries.push({
+              no,
+              tx: items[i].x / W,   // 正規化x
+              ty: items[i].y / H,   // 正規化y（スクリーン座標）
+            });
+            break;
+          }
+        }
+      }
+    }
+
+    if (photoEntries.length === 0) return slots;
+
+    // --- 画像座標をOperatorListから取得 ---
+    const imgCoords = await getPageImageCoords(page, W, H);
+
+    // --- 写真番号テキストの座標に最も近い画像を列優先でマッチング ---
+    // ルール: 同じ列（x差0.12以内）でテキストより下にある画像のうち最も近いものを選ぶ
+    // 列マッチが見つからない場合はそのエントリをスキップ（ページ外の誤検出を除外）
+    const used = new Set();
+
+    for (const entry of photoEntries) {
+      let best = null;
+      let bestScore = 9999;
+
+      for (let idx = 0; idx < imgCoords.length; idx++) {
+        if (used.has(idx)) continue;
+        const img = imgCoords[idx];
+
+        // 同じ列か（x差0.12以内）
+        if (Math.abs(img.x - entry.tx) >= 0.12) continue;
+
+        // 画像の上端がテキストより下にある（少し余裕を持たせる）
+        if (img.y < entry.ty - 0.05) continue;
+
+        // y距離が最も近いものを選ぶ
+        const score = Math.abs(img.y - entry.ty);
+        if (score < bestScore) { bestScore = score; best = idx; }
+      }
+
+      // 列マッチが見つかった場合のみ採用（見つからない=ページ外の誤検出なのでスキップ）
+      if (best !== null) {
+        used.add(best);
+        const coord = imgCoords[best];
+        const isNON = entry.no >= 1000;
+        slots.push({
+          key: `${prefix}p${pnum}_${entry.no}`,
+          label: `No.${entry.no}`,
+          required: true, isNON,
+          prevPage: pnum, prevNo: entry.no,
+          crop: coord,
+        });
+      }
+    }
+  } catch(e) { console.error('extractPhotoSlots error:', e); }
+  return slots;
+}
+
+// ページの画像座標を取得（左上から右下順）
+async function getPageImageCoords(page, W, H) {
+  try {
+    const ops = await page.getOperatorList();
+    const vp  = page.getViewport({ scale: 1 });
+
+    const coords = [];
+    // CTMスタック（PDF座標系）
+    const stack = [[1,0,0,1,0,0]];
+
+    const mul = (m, n) => [
+      m[0]*n[0]+m[2]*n[1], m[1]*n[0]+m[3]*n[1],
+      m[0]*n[2]+m[2]*n[3], m[1]*n[2]+m[3]*n[3],
+      m[0]*n[4]+m[2]*n[5]+m[4], m[1]*n[4]+m[3]*n[5]+m[5],
+    ];
+
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn   = ops.fnArray[i];
+      const args = ops.argsArray[i];
+      if (fn === pdfjsLib.OPS.save) {
+        stack.push([...stack[stack.length-1]]);
+      } else if (fn === pdfjsLib.OPS.restore) {
+        if (stack.length > 1) stack.pop();
+      } else if (fn === pdfjsLib.OPS.transform) {
+        stack[stack.length-1] = mul(stack[stack.length-1], args);
+      } else if (fn === pdfjsLib.OPS.paintImageXObject ||
+                 fn === pdfjsLib.OPS.paintJpegXObject  ||
+                 fn === pdfjsLib.OPS.paintImageMaskXObject) {
+        const m = stack[stack.length-1];
+        // PDF座標: 左下が原点、y軸上向き
+        // 画像は (0,0)-(1,1) の正方形をCTMで変換
+        const px = m[4];           // PDF x (左端)
+        const py = m[5];           // PDF y (下端)
+        const pw = Math.abs(m[0]) || Math.abs(m[2]); // 幅
+        const ph = Math.abs(m[1]) || Math.abs(m[3]); // 高さ
+
+        // スクリーン座標（左上原点）に変換
+        // PDF座標: y=0が下、H=ページ高さ
+        const sx = px / vp.width;
+        const sy = (vp.height - py - ph) / vp.height;
+        const sw = pw / vp.width;
+        const sh = ph / vp.height;
+
+        // 写真サイズの下限（ヘッダーやアイコン等を除外）
+        if (sw > 0.10 && sh > 0.08 && sx >= 0 && sy >= 0 && sx+sw <= 1.1 && sy+sh <= 1.1) {
+          coords.push({ x: Math.max(0,sx), y: Math.max(0,sy), w: sw, h: sh });
+        }
+      }
+    }
+
+    // 左上→右下順にソート（行を50px単位でグループ化）
+    return coords.sort((a, b) => {
+      const rowA = Math.round(a.y / 0.10);
+      const rowB = Math.round(b.y / 0.10);
+      if (rowA !== rowB) return rowA - rowB;
+      return a.x - b.x;
+    });
+  } catch(e) {
+    return [];
+  }
+}
+
+// ===== PDF読み込み =====
+async function loadPDF(input) {
+  const file = input.files[0];
+  if (!file) return;
+  showToast('PDFを読み込んでいます...', '');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    state.pdfDoc = pdf;
+    state.pdfName = file.name.replace('.pdf', '');
+    state.totalPages = pdf.numPages;
+    state.pageCache = {};
+    Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
+
+    // ===== ページ自動検出 =====
+    showToast('ページ構成を解析中...', '');
+    await detectPageStructure(pdf);
+
+    document.getElementById('pdf-name').textContent = file.name;
+    document.getElementById('pdf-pages').textContent = `${pdf.numPages} ページ`;
+    document.getElementById('upload-zone').classList.add('hidden');
+    document.getElementById('pdf-loaded-info').classList.remove('hidden');
+    document.getElementById('btn-survey').disabled = false;
+    document.getElementById('btn-inspect').disabled = false;
+    showToast(`✅ ${pdf.numPages}ページ読み込み完了`, 'success');
+  } catch(e) {
+    showToast('❌ PDF読み込みエラー', 'error');
+  }
+  input.value = '';
+}
+
+// ===== ページ構成自動検出 =====
+// PDF.jsでテキストを抽出して様式番号→ページ番号を解決
+async function detectPageStructure(pdf) {
+  const pageMap = {}; // { 's2': [2], 's3': [3,4,5,6], ... }
+  const keywords = {
+    'その２': 's2', 'その３': 's3', 'その４': 's4',
+    'その５': 's5', 'その６': 's6',
+    'その９': 's9', 'その１０': 's10',
+  };
+
+  for (let p = 1; p <= pdf.numPages; p++) {
+    try {
+      const page = await pdf.getPage(p);
+      const tc = await page.getTextContent();
+      const text = tc.items.map(i => i.str).join('');
+      // 様式番号を検出
+      if (text.includes('定期点検記録様式') || text.includes('データ記録様式')) {
+        for (const [key, id] of Object.entries(keywords)) {
+          if (text.includes(key)) {
+            if (!pageMap[id]) pageMap[id] = [];
+            pageMap[id].push(p);
+            break;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  state.pageMap = pageMap;
+
+  // メニュー定義のpagesを更新
+  const menuDef = [...MENU_SURVEY_BASE, ...MENU_INSPECT_EXTRA];
+  menuDef.forEach(item => {
+    if (pageMap[item.mapKey]) {
+      item.pages = pageMap[item.mapKey];
+    }
+  });
+
+  // 写真スロットを動的生成
+  await buildPhotoSlotsFromPDF(pdf, pageMap);
+}
+
+function removePDF() {
+  state.pdfDoc = null;
+  state.pageCache = {};
+  Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
+  document.getElementById('upload-zone').classList.remove('hidden');
+  document.getElementById('pdf-loaded-info').classList.add('hidden');
+  document.getElementById('btn-survey').disabled = true;
+  document.getElementById('btn-inspect').disabled = true;
+}
+
+// ===== ページ画像取得（キャッシュ付き）=====
+async function getPageImage(pageNum, scale = 2.0) {
+  const cacheKey = `${pageNum}_${scale}`;
+  if (state.pageCache[cacheKey]) return state.pageCache[cacheKey];
+  if (!state.pdfDoc) return null;
+  try {
+    const page = await state.pdfDoc.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+    state.pageCache[cacheKey] = dataURL;
+    return dataURL;
+  } catch(e) { return null; }
+}
+
+// ===== モード入場 =====
+function enterMode(mode) {
+  state.mode = mode;
+  document.getElementById('topbar').style.display = 'flex';
+  document.getElementById('topbar-badge').className = 'topbar-badge ' + (mode === 'survey' ? 'badge-survey' : 'badge-inspect');
+  document.getElementById('topbar-badge').textContent = mode === 'survey' ? '踏査' : '本調査';
+  showMenuContent();
+  showScreen('menu');
+}
+
+// ===== メニュー表示 =====
+function showMenu(forward = true) {
+  // 戻るときだけ呼ばれる（enterModeからは呼ばれない）
+  showMenuContent();
+}
+
+function showMenuContent() {
+  document.getElementById('topbar-title').textContent = '橋梁点検メニュー';
+  document.getElementById('menu-title').textContent = state.mode === 'survey' ? '踏査モード' : '本調査モード';
+  document.getElementById('menu-sub').textContent = `${state.pdfName}`;
+  document.getElementById('topbar-title').textContent = '橋梁点検メニュー';
+  document.getElementById('menu-title').textContent = state.mode === 'survey' ? '踏査モード' : '本調査モード';
+  document.getElementById('menu-sub').textContent = `${state.pdfName}`;
+
+  const menuDef = state.mode === 'survey' ? MENU_SURVEY : MENU_INSPECT;
+  const list = document.getElementById('menu-list');
+  list.innerHTML = '';
+  menuDef.forEach(item => {
+    const tags = item.tags.map(t => {
+      const cls = t === 'view' ? 'tag-view' : t === 'draw' ? 'tag-draw' : 'tag-photo';
+      const label = t === 'view' ? '閲覧' : t === 'draw' ? '書込' : '撮影';
+      return `<span class="menu-item-tag ${cls}">${label}</span>`;
+    }).join('');
+    const el = document.createElement('div');
+    el.className = 'menu-item';
+    el.innerHTML = `
+      <span class="menu-item-icon">${item.icon}</span>
+      <div class="menu-item-body">
+        <div class="menu-item-title">${item.title}</div>
+        <div class="menu-item-sub">${item.sub}</div>
+      </div>
+      ${tags}
+      <span class="tag-arrow">›</span>
+    `;
+    el.onclick = () => openSection(item);
+    list.appendChild(el);
+  });
+
+  updatePhotoProgress();
+}
+
+// ===== 写真進捗 =====
+function updatePhotoProgress() {
+  const isSurvey = state.mode === 'survey';
+  const slots = isSurvey ? SURVEY_PHOTO_SLOTS : [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS];
+  const required = slots.filter(s => s.required);
+  const captured = required.filter(s => state.photos[s.key]);
+  const pct = required.length > 0 ? Math.round(captured.length / required.length * 100) : 0;
+  document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = `必須: ${captured.length} / ${required.length} 枚 (${pct}%)`;
+}
+
+// ===== セクション表示 =====
+async function openSection(item) {
+  state.currentSection = item;
+  document.getElementById('topbar-title').textContent = item.title;
+  showScreen('viewer');
+
+  const tabs = document.getElementById('viewer-tabs');
+  const content = document.getElementById('viewer-content');
+  tabs.innerHTML = '';
+  content.innerHTML = '';
+
+  if (item.type === 'pdf-viewer') {
+    tabs.innerHTML = '';
+    const section = document.createElement('div');
+    section.className = 'viewer-section active page-viewer';
+    section.innerHTML = item.pages.map(p => `
+      <div class="page-card">
+        <div class="page-card-header"><span>ページ ${p}</span></div>
+        <div class="page-loading" id="loading-${p}"><div class="loading-spinner"></div>読み込み中...</div>
+        <canvas id="canvas-${p}" style="display:none"></canvas>
+      </div>
+    `).join('');
+    content.appendChild(section);
+    // 非同期でページレンダリング
+    for (const p of item.pages) {
+      const img = await getPageImage(p);
+      if (img) {
+        const div = document.getElementById(`loading-${p}`);
+        const cv = document.getElementById(`canvas-${p}`);
+        if (div) div.style.display = 'none';
+        if (cv) {
+          const image = new Image();
+          image.src = img;
+          image.style.width = '100%';
+          image.style.display = 'block';
+          cv.replaceWith(image);
+        }
+      }
+    }
+  } else if (item.type === 'draw-viewer') {
+    await renderDrawViewer(item, tabs, content);
+  } else if (item.type === 'photo-view') {
+    renderPhotoViewer(item, tabs, content);
+  }
+}
+
+// ===== 書き込みビューア =====
+async function renderDrawViewer(item, tabs, content) {
+  // タブ
+  item.pages.forEach((p, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'viewer-tab' + (i === 0 ? ' active' : '');
+    tab.textContent = `ページ ${p}`;
+    tab.onclick = () => {
+      tabs.querySelectorAll('.viewer-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      content.querySelectorAll('.viewer-section').forEach(s => s.classList.remove('active'));
+      content.querySelectorAll('.viewer-section')[i].classList.add('active');
+    };
+    tabs.appendChild(tab);
+  });
+
+  for (let i = 0; i < item.pages.length; i++) {
+    const p = item.pages[i];
+    const section = document.createElement('div');
+    section.className = 'viewer-section' + (i === 0 ? ' active' : '');
+    const drawKey = `${item.key}_p${p}`;
+
+    // ツールバー
+    section.innerHTML = `
+      <div class="draw-toolbar" id="toolbar-${drawKey}">
+        <button class="draw-tool-btn active" id="tool-pen-${drawKey}"    onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
+        <button class="draw-tool-btn"         id="tool-line-${drawKey}"   onclick="setTool('line','${drawKey}')">╱ 直線</button>
+        <button class="draw-tool-btn"         id="tool-arrow-${drawKey}"  onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
+        <button class="draw-tool-btn"         id="tool-rect-${drawKey}"   onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
+        <button class="draw-tool-btn"         id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
+        <button class="draw-tool-btn"         id="tool-select-${drawKey}" onclick="setTool('select','${drawKey}')">▷ 選択</button>
+        <button class="draw-tool-btn eraser"  id="tool-eraser-${drawKey}" onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
+        <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
+        <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
+        <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
+        <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
+        <span style="font-size:10px;color:var(--text2)">mm</span>
+        <span class="draw-toolbar-sep"></span>
+        <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
+        <button class="size-btn active" id="pat-none-${drawKey}"   onclick="setPattern('none','${drawKey}',this)">なし</button>
+        <button class="size-btn"        id="pat-hatch-${drawKey}"  onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
+        <button class="size-btn"        id="pat-diag-${drawKey}"   onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
+        <button class="size-btn"        id="pat-solid-${drawKey}"  onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
+        <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
+        <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
+        <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
+        <span class="draw-toolbar-sep"></span>
+        <span style="font-size:10px;color:var(--text2);white-space:nowrap">回転:</span>
+        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)" style="padding:7px 10px">◁ -1°</button>
+        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)" style="padding:7px 10px">◁◁ -10°</button>
+        <input type="number" id="rot-input-${drawKey}" min="-360" max="360" value="0"
+          style="width:52px;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 6px;font-size:12px;text-align:center"
+          onchange="rotateToAngle('${drawKey}',this.value)">
+        <span style="font-size:10px;color:var(--text2)">°</span>
+        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',10)"  style="padding:7px 10px">+10° ▷▷</button>
+        <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)"   style="padding:7px 10px">+1° ▷</button>
+        <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${p})">💾 保存</button>
+      </div>
+      <div class="draw-container" id="draw-container-${drawKey}">
+        <div class="page-loading" id="draw-loading-${drawKey}"><div class="loading-spinner"></div>読み込み中...</div>
+      </div>
+    `;
+    content.appendChild(section);
+
+    // 非同期でページ画像をロードしてキャンバスを設定
+    const imgData = await getPageImage(p);
+    if (imgData) {
+      setupDrawCanvas(drawKey, imgData);
+    }
+  }
+}
+
+// ===== 描画エンジン =====
+// drawState[key] = {
+//   tool: 'pen'|'line'|'arrow'|'select'|'eraser'
+//   color, sizeMM,
+//   penHistory: [dataURL, ...],   // フリーハンドのundo用
+//   objects: [{id,type,x1,y1,x2,y2,color,sizeMM}, ...],  // 直線・引出線
+//   selectedId: null | id,
+//   clipboard: null | obj,
+//   drawing: false, startX, startY,
+//   savedPenData: null   // 保存済みフリーハンドdataURL
+// }
+const drawState = {};
+
+// mmをpx換算（96dpi基準、画面スケール考慮）
+function mmToPx(mm, dpr) { return mm * 3.78 * dpr; }
+
+function setupDrawCanvas(key, imgData) {
+  const container = document.getElementById(`draw-container-${key}`);
+  if (!container) return;
+  const loadingDiv = document.getElementById(`draw-loading-${key}`);
+
+  const img = new Image();
+  img.onload = () => {
+    if (loadingDiv) loadingDiv.style.display = 'none';
+    container.innerHTML = '';
+    container.style.position = 'relative';
+    container.style.userSelect = 'none';
+
+    // ベース画像
+    const baseImg = document.createElement('img');
+    baseImg.src = imgData;
+    baseImg.className = 'draw-base';
+    baseImg.draggable = false;
+    container.appendChild(baseImg);
+
+    // フリーハンドキャンバス
+    const canvas = document.createElement('canvas');
+    canvas.id = `drawcanvas-${key}`;
+    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none;';
+    container.appendChild(canvas);
+
+    // SVGオーバーレイ（直線・引出線用）
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id = `drawsvg-${key}`;
+    svg.setAttribute('class','draw-svg-overlay');
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;';
+    container.appendChild(svg);
+
+    // プレビューSVG（描画中の仮線）
+    const svgPreview = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svgPreview.id = `drawsvg-preview-${key}`;
+    svgPreview.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
+    container.appendChild(svgPreview);
+
+    // 状態初期化
+    if (!drawState[key]) {
+      drawState[key] = {
+        tool:'pen', color:'#ef4444', sizeMM:0.25, pattern:'none',
+        penHistory:[], objects:[], selectedId:null, clipboard:null,
+        drawing:false, startX:0, startY:0, savedPenData:null
+      };
+    }
+
+    // キャンバスリサイズ
+    const resizeCanvas = () => {
+      const rect = baseImg.getBoundingClientRect();
+      const dpr = window.devicePixelRatio;
+      canvas.width  = rect.width  * dpr;
+      canvas.height = rect.height * dpr;
+      if (drawState[key]?.savedPenData) {
+        const ctx = canvas.getContext('2d');
+        const s = new Image();
+        s.onload = () => { ctx.drawImage(s,0,0,canvas.width,canvas.height); };
+        s.src = drawState[key].savedPenData;
+      }
+      // SVGオブジェクト再描画
+      renderSVGObjects(key);
+    };
+    setTimeout(resizeCanvas, 120);
+    window.addEventListener('resize', () => resizeCanvas());
+
+    setupDrawEvents(canvas, svg, key);
+  };
+  img.src = imgData;
+}
+
+// ===== イベント設定 =====
+function setupDrawEvents(canvas, svg, key) {
+  const container = canvas.parentElement;
+
+  const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const dpr  = window.devicePixelRatio;
+    const src  = e.touches ? e.touches[0] : e;
+    return {
+      x: (src.clientX - rect.left) / rect.width  * canvas.width,
+      y: (src.clientY - rect.top)  / rect.height * canvas.height,
+      // 正規化座標（0〜1）でオブジェクト保存
+      nx: (src.clientX - rect.left) / rect.width,
+      ny: (src.clientY - rect.top)  / rect.height
+    };
+  };
+
+  // ===== ポインタ開始 =====
+  const onStart = (e) => {
+    e.preventDefault();
+    const ds = drawState[key];
+    const pos = getPos(e);
+    ds.drawing = true;
+    ds.startX = pos.nx; ds.startY = pos.ny;
+
+    if (ds.tool === 'pen' || ds.tool === 'eraser') {
+      // フリーハンド: スナップショット
+      ds.penHistory.push(canvas.toDataURL());
+      if (ds.penHistory.length > 30) ds.penHistory.shift();
+      const ctx = canvas.getContext('2d');
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+    } else if (ds.tool === 'select') {
+      // 選択: ヒットテスト（SVGオブジェクト）
+      const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
+      ds.selectedId = hit ? hit.id : null;
+      renderSVGObjects(key);
+    }
+  };
+
+  // ===== ポインタ移動 =====
+  const onMove = (e) => {
+    e.preventDefault();
+    const ds = drawState[key];
+    if (!ds.drawing) return;
+    const pos = getPos(e);
+
+    if (ds.tool === 'pen') {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio;
+      ctx.lineWidth   = mmToPx(ds.sizeMM, dpr);
+      ctx.lineCap     = 'round'; ctx.lineJoin = 'round';
+      ctx.strokeStyle = ds.color;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineTo(pos.x, pos.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+    } else if (ds.tool === 'eraser') {
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio;
+      ctx.lineWidth = mmToPx(ds.sizeMM * 4, dpr);
+      ctx.lineCap   = 'round'; ctx.lineJoin = 'round';
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineTo(pos.x, pos.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+    } else if (ds.tool === 'line' || ds.tool === 'arrow') {
+      // プレビュー線
+      renderPreviewLine(key, ds.startX, ds.startY, pos.nx, pos.ny, ds.color, ds.sizeMM, ds.tool === 'arrow');
+    } else if (ds.tool === 'rect' || ds.tool === 'ellipse') {
+      renderPreviewShape(key, ds.startX, ds.startY, pos.nx, pos.ny, ds.color, ds.sizeMM, ds.tool, ds.pattern);
+    } else if (ds.tool === 'select' && ds.selectedId) {
+      // 選択中オブジェクトを移動
+      const obj = ds.objects.find(o => o.id === ds.selectedId);
+      if (obj) {
+        const dx = pos.nx - ds.startX;
+        const dy = pos.ny - ds.startY;
+        obj.x1 += dx; obj.y1 += dy;
+        obj.x2 += dx; obj.y2 += dy;
+        ds.startX = pos.nx; ds.startY = pos.ny;
+        renderSVGObjects(key);
+      }
+    }
+  };
+
+  // ===== ポインタ終了 =====
+  const onEnd = (e) => {
+    e.preventDefault();
+    const ds = drawState[key];
+    if (!ds.drawing) return;
+    ds.drawing = false;
+
+    if (ds.tool === 'line' || ds.tool === 'arrow') {
+      const rect = canvas.getBoundingClientRect();
+      const src  = e.changedTouches ? e.changedTouches[0] : e;
+      const ex   = (src.clientX - rect.left) / rect.width;
+      const ey   = (src.clientY - rect.top)  / rect.height;
+      const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
+      if (dist > 0.01) {
+        ds.objects.push({
+          id: Date.now(), type: ds.tool,
+          x1: ds.startX, y1: ds.startY, x2: ex, y2: ey,
+          color: ds.color, sizeMM: ds.sizeMM
+        });
+      }
+      clearPreviewLine(key);
+      renderSVGObjects(key);
+    } else if (ds.tool === 'rect' || ds.tool === 'ellipse') {
+      const rect = canvas.getBoundingClientRect();
+      const src  = e.changedTouches ? e.changedTouches[0] : e;
+      const ex   = (src.clientX - rect.left) / rect.width;
+      const ey   = (src.clientY - rect.top)  / rect.height;
+      const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
+      if (dist > 0.01) {
+        ds.objects.push({
+          id: Date.now(), type: ds.tool,
+          x1: ds.startX, y1: ds.startY, x2: ex, y2: ey,
+          color: ds.color, sizeMM: ds.sizeMM, pattern: ds.pattern
+        });
+      }
+      clearPreviewLine(key);
+      renderSVGObjects(key);
+    }
+  };
+
+  canvas.addEventListener('mousedown',  onStart);
+  canvas.addEventListener('mousemove',  onMove);
+  canvas.addEventListener('mouseup',    onEnd);
+  canvas.addEventListener('touchstart', onStart, { passive:false });
+  canvas.addEventListener('touchmove',  onMove,  { passive:false });
+  canvas.addEventListener('touchend',   onEnd,   { passive:false });
+}
+
+// ===== SVGオブジェクト描画 =====
+function makeDefs(svg, id, color, pattern) {
+  // パターン定義をdefsに追加
+  let defs = svg.querySelector('defs');
+  if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.prepend(defs); }
+  const pid = `pat-${id}`;
+  const existing = defs.querySelector(`#${pid}`);
+  if (existing) existing.remove();
+
+  if (pattern === 'none') return 'none';
+  if (pattern === 'solid') return color;
+
+  const pat = document.createElementNS('http://www.w3.org/2000/svg','pattern');
+  pat.setAttribute('id', pid);
+  pat.setAttribute('patternUnits','userSpaceOnUse');
+  pat.setAttribute('width','8'); pat.setAttribute('height','8');
+
+  if (pattern === 'diag') {
+    // 斜め線（右下がり）
+    const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1','0'); l.setAttribute('y1','0');
+    l.setAttribute('x2','8'); l.setAttribute('y2','8');
+    l.setAttribute('stroke', color); l.setAttribute('stroke-width','1');
+    pat.appendChild(l);
+  } else if (pattern === 'hatch') {
+    // 網掛け（縦横）
+    ['0,0,0,8','0,0,8,0'].forEach(pts => {
+      const [x1,y1,x2,y2] = pts.split(',');
+      const l = document.createElementNS('http://www.w3.org/2000/svg','line');
+      l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+      l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+      l.setAttribute('stroke', color); l.setAttribute('stroke-width','1');
+      pat.appendChild(l);
+    });
+  }
+  defs.appendChild(pat);
+  return `url(#${pid})`;
+}
+
+function renderSVGObjects(key) {
+  const svg = document.getElementById(`drawsvg-${key}`);
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!svg || !canvas) return;
+  const ds = drawState[key];
+  if (!ds) return;
+  svg.innerHTML = '';
+  const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
+  const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
+
+  ds.objects.forEach(obj => {
+    const x1 = obj.x1 * W, y1 = obj.y1 * H;
+    const x2 = obj.x2 * W, y2 = obj.y2 * H;
+    const sw = mmToPx(obj.sizeMM, 1);
+    const isSel = ds.selectedId === obj.id;
+    const strokeColor = isSel ? '#60d0ff' : obj.color;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','svg-obj' + (isSel ? ' selected' : ''));
+
+    // 回転: オブジェクトの中心を軸に回転
+    const rot = obj.rotation || 0;
+    if (rot !== 0) {
+      const cx = (x1 + x2) / 2;
+      const cy = (y1 + y2) / 2;
+      g.setAttribute('transform', `rotate(${rot} ${cx} ${cy})`);
+    }
+
+    // 選択時に回転入力欄を同期
+    if (isSel) {
+      const input = document.getElementById(`rot-input-${key}`);
+      if (input) input.value = Math.round(rot);
+    }
+
+    if (obj.type === 'line' || obj.type === 'arrow') {
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+      line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+      line.setAttribute('stroke', strokeColor);
+      line.setAttribute('stroke-width', sw);
+      line.setAttribute('stroke-linecap','round');
+      g.appendChild(line);
+
+      if (obj.type === 'arrow') {
+        const angle = Math.atan2(y2-y1, x2-x1);
+        const al = Math.max(sw*4, 10);
+        const arr = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+        arr.setAttribute('points',`${x2-al*Math.cos(angle-0.4)},${y2-al*Math.sin(angle-0.4)} ${x2},${y2} ${x2-al*Math.cos(angle+0.4)},${y2-al*Math.sin(angle+0.4)}`);
+        arr.setAttribute('stroke', strokeColor); arr.setAttribute('stroke-width', sw);
+        arr.setAttribute('fill','none'); arr.setAttribute('stroke-linecap','round');
+        g.appendChild(arr);
+      }
+
+      // ヒットエリア
+      const hit = document.createElementNS('http://www.w3.org/2000/svg','line');
+      hit.setAttribute('x1',x1); hit.setAttribute('y1',y1);
+      hit.setAttribute('x2',x2); hit.setAttribute('y2',y2);
+      hit.setAttribute('stroke','transparent');
+      hit.setAttribute('stroke-width', Math.max(sw+12,16));
+      hit.style.cursor = 'pointer';
+      hit.addEventListener('click', () => { ds.selectedId = ds.selectedId===obj.id?null:obj.id; renderSVGObjects(key); });
+      g.appendChild(hit);
+
+    } else if (obj.type === 'rect') {
+      const rx = Math.min(x1,x2), ry = Math.min(y1,y2);
+      const rw = Math.abs(x2-x1),  rh = Math.abs(y2-y1);
+      const fillUrl = makeDefs(svg, obj.id, obj.color, obj.pattern || 'none');
+      const fillOpacity = (obj.pattern === 'solid') ? 0.3 : 1;
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('x',rx); rect.setAttribute('y',ry);
+      rect.setAttribute('width',rw); rect.setAttribute('height',rh);
+      rect.setAttribute('stroke', strokeColor); rect.setAttribute('stroke-width', sw);
+      rect.setAttribute('fill', fillUrl === 'none' ? 'none' : fillUrl);
+      if (obj.pattern === 'solid') rect.setAttribute('fill-opacity', fillOpacity);
+      g.appendChild(rect);
+
+      // ヒットエリア
+      const hit = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      hit.setAttribute('x',rx-6); hit.setAttribute('y',ry-6);
+      hit.setAttribute('width',rw+12); hit.setAttribute('height',rh+12);
+      hit.setAttribute('fill','transparent'); hit.setAttribute('stroke','transparent');
+      hit.style.cursor = 'pointer';
+      hit.addEventListener('click', () => { ds.selectedId = ds.selectedId===obj.id?null:obj.id; renderSVGObjects(key); });
+      g.appendChild(hit);
+
+    } else if (obj.type === 'ellipse') {
+      const cx = (x1+x2)/2, cy = (y1+y2)/2;
+      const rx = Math.abs(x2-x1)/2, ry2 = Math.abs(y2-y1)/2;
+      const fillUrl = makeDefs(svg, obj.id, obj.color, obj.pattern || 'none');
+      const fillOpacity = (obj.pattern === 'solid') ? 0.3 : 1;
+
+      const el = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+      el.setAttribute('cx',cx); el.setAttribute('cy',cy);
+      el.setAttribute('rx',rx); el.setAttribute('ry',ry2);
+      el.setAttribute('stroke', strokeColor); el.setAttribute('stroke-width', sw);
+      el.setAttribute('fill', fillUrl === 'none' ? 'none' : fillUrl);
+      if (obj.pattern === 'solid') el.setAttribute('fill-opacity', fillOpacity);
+      g.appendChild(el);
+
+      // ヒットエリア
+      const hit = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+      hit.setAttribute('cx',cx); hit.setAttribute('cy',cy);
+      hit.setAttribute('rx',rx+8); hit.setAttribute('ry',ry2+8);
+      hit.setAttribute('fill','transparent'); hit.setAttribute('stroke','transparent');
+      hit.style.cursor = 'pointer';
+      hit.addEventListener('click', () => { ds.selectedId = ds.selectedId===obj.id?null:obj.id; renderSVGObjects(key); });
+      g.appendChild(hit);
+    }
+
+    // 選択ハンドル
+    if (isSel) {
+      const selRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      const bx = Math.min(x1,x2)-4, by = Math.min(y1,y2)-4;
+      const bw = Math.abs(x2-x1)+8, bh = Math.abs(y2-y1)+8;
+      selRect.setAttribute('x',bx); selRect.setAttribute('y',by);
+      selRect.setAttribute('width',bw); selRect.setAttribute('height',bh);
+      selRect.setAttribute('fill','none');
+      selRect.setAttribute('stroke','#60d0ff');
+      selRect.setAttribute('stroke-width','1');
+      selRect.setAttribute('stroke-dasharray','4 3');
+      g.appendChild(selRect);
+    }
+
+    svg.appendChild(g);
+  });
+}
+
+// ===== プレビュー線 =====
+function renderPreviewLine(key, nx1, ny1, nx2, ny2, color, sizeMM, isArrow) {
+  const svg = document.getElementById(`drawsvg-preview-${key}`);
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!svg || !canvas) return;
+  svg.innerHTML = '';
+  const W = canvas.getBoundingClientRect().width;
+  const H = canvas.getBoundingClientRect().height;
+  const sw = mmToPx(sizeMM, 1);
+  const x1=nx1*W, y1=ny1*H, x2=nx2*W, y2=ny2*H;
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+  line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+  line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+  line.setAttribute('stroke',color);
+  line.setAttribute('stroke-width',sw);
+  line.setAttribute('stroke-linecap','round');
+  line.setAttribute('stroke-dasharray','6 4');
+  line.setAttribute('opacity','0.8');
+  svg.appendChild(line);
+
+  if (isArrow) {
+    const angle = Math.atan2(y2-y1, x2-x1);
+    const al = Math.max(sw*4, 10);
+    const arr = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    arr.setAttribute('points',
+      `${x2 - al*Math.cos(angle-0.4)},${y2 - al*Math.sin(angle-0.4)} ${x2},${y2} ${x2 - al*Math.cos(angle+0.4)},${y2 - al*Math.sin(angle+0.4)}`
+    );
+    arr.setAttribute('stroke',color);
+    arr.setAttribute('stroke-width',sw);
+    arr.setAttribute('fill','none');
+    arr.setAttribute('opacity','0.8');
+    svg.appendChild(arr);
+  }
+}
+
+function clearPreviewLine(key) {
+  const svg = document.getElementById(`drawsvg-preview-${key}`);
+  if (svg) svg.innerHTML = '';
+}
+
+// ===== 図形プレビュー =====
+function renderPreviewShape(key, nx1, ny1, nx2, ny2, color, sizeMM, type, pattern) {
+  const svg = document.getElementById(`drawsvg-preview-${key}`);
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!svg || !canvas) return;
+  svg.innerHTML = '';
+  const W = canvas.getBoundingClientRect().width;
+  const H = canvas.getBoundingClientRect().height;
+  const sw = mmToPx(sizeMM, 1);
+  const x1=nx1*W, y1=ny1*H, x2=nx2*W, y2=ny2*H;
+
+  // プレビュー用パターン（簡易）
+  let fill = 'none';
+  if (pattern === 'solid') fill = color;
+
+  if (type === 'rect') {
+    const el = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    el.setAttribute('x',Math.min(x1,x2)); el.setAttribute('y',Math.min(y1,y2));
+    el.setAttribute('width',Math.abs(x2-x1)); el.setAttribute('height',Math.abs(y2-y1));
+    el.setAttribute('stroke',color); el.setAttribute('stroke-width',sw);
+    el.setAttribute('stroke-dasharray','6 4');
+    el.setAttribute('fill', fill); el.setAttribute('fill-opacity','0.2');
+    svg.appendChild(el);
+  } else if (type === 'ellipse') {
+    const cx=(x1+x2)/2, cy=(y1+y2)/2;
+    const el = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
+    el.setAttribute('cx',cx); el.setAttribute('cy',cy);
+    el.setAttribute('rx',Math.abs(x2-x1)/2); el.setAttribute('ry',Math.abs(y2-y1)/2);
+    el.setAttribute('stroke',color); el.setAttribute('stroke-width',sw);
+    el.setAttribute('stroke-dasharray','6 4');
+    el.setAttribute('fill', fill); el.setAttribute('fill-opacity','0.2');
+    svg.appendChild(el);
+  }
+}
+
+// ===== ツール・パターン設定 =====
+function setTool(tool, key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.tool = tool;
+  ds.selectedId = null;
+  ['pen','line','arrow','rect','ellipse','select','eraser'].forEach(t => {
+    document.getElementById(`tool-${t}-${key}`)?.classList.toggle('active', t === tool);
+  });
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (canvas) canvas.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  renderSVGObjects(key);
+}
+
+function setPattern(pattern, key, btn) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.pattern = pattern;
+  document.querySelectorAll(`#toolbar-${key} [id^="pat-"]`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function hitTest(nx, ny, objects, canvas) {
+  const W = canvas.getBoundingClientRect().width;
+  const H = canvas.getBoundingClientRect().height;
+  const px = nx * W, py = ny * H;
+  const THRESH = 12;
+  // 後ろから（前面優先）
+  for (let i = objects.length - 1; i >= 0; i--) {
+    const o = objects[i];
+    const x1=o.x1*W, y1=o.y1*H, x2=o.x2*W, y2=o.y2*H;
+    const len2 = (x2-x1)**2 + (y2-y1)**2;
+    if (len2 < 1) continue;
+    const t = Math.max(0, Math.min(1, ((px-x1)*(x2-x1)+(py-y1)*(y2-y1)) / len2));
+    const dx = px - (x1 + t*(x2-x1));
+    const dy = py - (y1 + t*(y2-y1));
+    if (Math.sqrt(dx*dx+dy*dy) < THRESH) return o;
+  }
+  return null;
+}
+
+// ===== 色・サイズ設定 =====
+function setColor(color, key, btn) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.color = color;
+  document.querySelectorAll(`#toolbar-${key} .color-btn`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function setSizeMM(mm, key, btn) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.sizeMM = mm;
+  document.querySelectorAll(`#toolbar-${key} .size-btn`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ===== Undo =====
+function undoDraw(key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  // オブジェクトがあれば最後を削除
+  if (ds.objects.length > 0) {
+    ds.objects.pop();
+    renderSVGObjects(key);
+    return;
+  }
+  // フリーハンドをundo
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!canvas || ds.penHistory.length === 0) return;
+  const ctx = canvas.getContext('2d');
+  const last = ds.penHistory.pop();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if (last) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img,0,0);
+    img.src = last;
+  }
+}
+
+// ===== オブジェクト操作 =====
+
+// ページをまたいで使えるグローバルクリップボード
+let globalClipboard = null;
+
+function deleteSelected(key) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
+  ds.objects = ds.objects.filter(o => o.id !== ds.selectedId);
+  ds.selectedId = null;
+  renderSVGObjects(key);
+  showToast('削除しました','');
+}
+
+function copySelected(key) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (obj) {
+    globalClipboard = { ...obj };
+    // 後方互換でds.clipboardにも保持
+    ds.clipboard = { ...obj };
+    showToast('📋 コピーしました（他ページにも貼付可）','success');
+  }
+}
+
+function pasteObj(key) {
+  // グローバルクリップボード優先、なければローカル
+  const src = globalClipboard || drawState[key]?.clipboard;
+  if (!src) { showToast('コピーされた内容がありません','error'); return; }
+  const ds = drawState[key];
+  if (!ds) return;
+  const offset = 0.03;
+  const newObj = {
+    ...src,
+    id: Date.now(),
+    x1: src.x1 + offset, y1: src.y1 + offset,
+    x2: src.x2 + offset, y2: src.y2 + offset,
+    rotation: src.rotation || 0
+  };
+  ds.objects.push(newObj);
+  ds.selectedId = newObj.id;
+  renderSVGObjects(key);
+  showToast('📌 貼り付けました','success');
+}
+
+// ===== 回転 =====
+// オブジェクトの回転角度を相対的に変化させる
+function rotateSelected(key, deltaDeg) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+  obj.rotation = ((obj.rotation || 0) + deltaDeg + 360) % 360;
+  // 入力欄も更新
+  const input = document.getElementById(`rot-input-${key}`);
+  if (input) input.value = Math.round(obj.rotation);
+  renderSVGObjects(key);
+}
+
+// 角度を直接指定して回転
+function rotateToAngle(key, angleDeg) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+  obj.rotation = ((parseFloat(angleDeg) || 0) + 360) % 360;
+  renderSVGObjects(key);
+}
+
+// ===== 保存 =====
+function saveDraw(key, pageNum) {
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!canvas) return;
+  const ds = drawState[key];
+
+  // フリーハンドを保存
+  ds.savedPenData = canvas.toDataURL('image/png');
+
+  // フリーハンド + SVGオブジェクトを合成してdataURLに
+  const svgEl = document.getElementById(`drawsvg-${key}`);
+  const baseImg = canvas.previousElementSibling;
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  const dpr = window.devicePixelRatio;
+
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width  = W * dpr;
+  exportCanvas.height = H * dpr;
+  const ctx = exportCanvas.getContext('2d');
+
+  // ベース画像を描画
+  const base = new Image();
+  base.onload = () => {
+    ctx.drawImage(base, 0, 0, exportCanvas.width, exportCanvas.height);
+    // フリーハンドを重ねる
+    ctx.drawImage(canvas, 0, 0);
+    // SVGをシリアライズして重ねる
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([svgData], { type:'image/svg+xml' });
+    const svgURL  = URL.createObjectURL(svgBlob);
+    const svgImg  = new Image();
+    svgImg.onload = () => {
+      ctx.drawImage(svgImg, 0, 0, exportCanvas.width, exportCanvas.height);
+      URL.revokeObjectURL(svgURL);
+      state.drawings[key] = exportCanvas.toDataURL('image/png');
+      showToast('💾 書き込みを保存しました','success');
+    };
+    svgImg.src = svgURL;
+  };
+  base.src = baseImg?.src || '';
+}
+
+// clearDrawは削除（undoで代替）
+function clearDraw(key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.objects = [];
+  ds.selectedId = null;
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (canvas) { canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); ds.penHistory=[]; }
+  renderSVGObjects(key);
+}
+
+// ===== 写真ビューア =====
+function renderPhotoViewer(item, tabs, content) {
+  const isSurvey3  = item.key === 's3';
+  const isDamage10 = item.key === 's10';
+  const slots = isSurvey3 ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+
+  // タブなし・単一セクション
+  const section = document.createElement('div');
+  section.className = 'viewer-section active photo-section';
+
+  // ① 前回調書アコーディオン
+  const prevId = `prev-body-${item.key}`;
+  let prevPagesHTML = item.pages.map(p => `
+    <div class="page-card">
+      <div class="page-card-header"><span>ページ ${p}</span></div>
+      <div class="page-loading" id="pv-loading-${p}"><div class="loading-spinner"></div>読み込み中...</div>
+      <div id="pv-img-${p}"></div>
+    </div>
+  `).join('');
+
+  // ② 撮影忘れ警告
+  const missingRequired = slots.filter(s => s.required && !state.photos[s.key]);
+  const missingAlert = `
+    <div class="missing-alert ${missingRequired.length > 0 ? 'show' : ''}" id="missing-${item.key}">
+      <span class="alert-icon">⚠️</span>
+      <p>必須写真が <strong>${missingRequired.length}枚</strong> 未撮影です。<br>
+      ${missingRequired.slice(0,3).map(s=>s.label).join('、')}${missingRequired.length > 3 ? '…' : ''}</p>
+    </div>`;
+
+  // ③ NON/損傷フィルタ（その１０のみ）
+  const filterHTML = isDamage10 ? `
+    <div class="photo-filter-tabs">
+      <div class="photo-filter-tab active" onclick="filterPhotos('all','${item.key}',event)">全て</div>
+      <div class="photo-filter-tab" onclick="filterPhotos('damage','${item.key}',event)">損傷</div>
+      <div class="photo-filter-tab" onclick="filterPhotos('non','${item.key}',event)">NON</div>
+    </div>` : '';
+
+  // ④ ヘッダー（枚数表示）
+  const captured = slots.filter(s => state.photos[s.key]).length;
+  const headerHTML = `
+    <div class="photo-section-header">
+      <h3>📸 写真記録 <span style="font-size:12px;color:var(--text2);font-weight:400">${captured}/${slots.length}枚</span></h3>
+    </div>
+    <p style="font-size:11px;color:var(--accent);margin-bottom:10px;font-weight:700;">
+      📷 枠をタップするとカメラが起動します
+    </p>`;
+
+  section.innerHTML = `
+    <div class="prev-record-section">
+      <div class="prev-record-header" onclick="togglePrevRecord('${prevId}')">
+        <span>📄 前回点検調書を見る</span>
+        <span id="prev-arrow-${item.key}">▼</span>
+      </div>
+      <div class="prev-record-body page-viewer" id="${prevId}">
+        ${prevPagesHTML}
+      </div>
+    </div>
+    ${missingAlert}
+    ${filterHTML}
+    ${headerHTML}
+    <div class="photo-grid" id="photo-grid-${item.key}">
+      ${slots.map(slot => renderPhotoSlot(slot, item.key)).join('')}
+    </div>
+  `;
+  content.appendChild(section);
+
+  // 前回調書ページを非同期でロード
+  item.pages.forEach(async p => {
+    const img = await getPageImage(p);
+    if (img) {
+      const ld = document.getElementById(`pv-loading-${p}`);
+      const ct = document.getElementById(`pv-img-${p}`);
+      if (ld) ld.style.display = 'none';
+      if (ct) {
+        const image = new Image();
+        image.src = img; image.style.width = '100%'; image.style.display = 'block';
+        ct.appendChild(image);
+      }
+    }
+  });
+
+  // 各スロットの前回写真を非同期ロード
+  loadPrevPhotosForSlots(slots);
+}
+
+function togglePrevRecord(id) {
+  const body = document.getElementById(id);
+  if (!body) return;
+  body.classList.toggle('open');
+  // 矢印の向きを変える
+  const key = id.replace('prev-body-','');
+  const arrow = document.getElementById(`prev-arrow-${key}`);
+  if (arrow) arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
+// 前回写真キャッシュ
+const prevPhotoCache = {};
+
+// pdfplumberで計測した正規化座標でページ画像から写真を切り抜く
+async function getPrevPhotoForSlot(slot) {
+  if (prevPhotoCache[slot.key]) return prevPhotoCache[slot.key];
+  if (!slot.prevPage || !slot.crop || !state.pdfDoc) return null;
+
+  // ページを高解像度でレンダリング
+  const pageImg = await getPageImage(slot.prevPage, 2.5);
+  if (!pageImg) return null;
+
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+      const c = slot.crop;
+
+      // 正規化座標をピクセルに変換
+      const sx = c.x * W;
+      const sy = c.y * H;
+      const sw = c.w * W;
+      const sh = c.h * H;
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(sw);
+      canvas.height = Math.round(sh);
+      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+
+      const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+      prevPhotoCache[slot.key] = dataURL;
+      resolve(dataURL);
+    };
+    img.onerror = () => resolve(null);
+    img.src = pageImg;
+  });
+}
+
+function renderPhotoSlot(slot, sectionKey) {
+  const photo   = state.photos[slot.key];
+  const reqBadge = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
+  const nonBadge = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
+  const statusHTML = photo
+    ? '<span class="photo-card-status done">✓ 撮影済</span>'
+    : '<span class="photo-card-status">未撮影</span>';
+
+  // 今回撮影エリア
+  const currHTML = photo
+    ? `<div class="photo-half-done" onclick="capturePhoto('${slot.key}','${sectionKey}')">
+         <img src="${photo.dataURL}">
+         <div class="photo-half-retake"><span>📷 再撮影</span></div>
+         <span class="photo-half-check">✓</span>
+         <span class="photo-half-delete" onclick="event.stopPropagation();deletePhotoAndRefresh('${slot.key}','${sectionKey}')">✕</span>
+       </div>`
+    : `<div class="photo-half-shoot" onclick="capturePhoto('${slot.key}','${sectionKey}')">
+         <div class="cam-icon">📷</div>
+         <div class="cam-hint">タップして撮影</div>
+       </div>`;
+
+  // 前回写真番号ラベル
+  const prevLabel = slot.prevNo != null ? `前回 No.${slot.prevNo}` : '前回';
+
+  // 前回写真エリア（切り抜き済み画像をロード）
+  const prevHTML = slot.prevPage
+    ? `<div class="photo-half-noprev" id="prev-wrap-${slot.key}">
+         <span>⏳</span><p>読込中</p>
+       </div>`
+    : `<div class="photo-half-noprev">
+         <span>—</span><p>前回写真なし</p>
+       </div>`;
+
+  return `
+    <div class="photo-card" data-slot="${slot.key}" data-section="${sectionKey}">
+      <div class="photo-card-header">
+        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}</div>
+        ${statusHTML}
+      </div>
+      <div class="photo-pair">
+        <div class="photo-half">
+          <div class="photo-half-label prev">${prevLabel}</div>
+          ${prevHTML}
+        </div>
+        <div class="photo-half">
+          <div class="photo-half-label curr">今回撮影</div>
+          ${currHTML}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// 前回写真を非同期でロードしてスロットに埋め込む
+async function loadPrevPhotosForSlots(slots) {
+  for (const slot of slots) {
+    if (!slot.prevPage) continue;
+    const wrap = document.getElementById(`prev-wrap-${slot.key}`);
+    if (!wrap) continue;
+    const imgData = await getPrevPhotoForSlot(slot);
+    if (imgData) {
+      wrap.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = imgData;
+      img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+      wrap.appendChild(img);
+      wrap.style.display = 'block';
+    }
+  }
+}
+
+function deletePhotoAndRefresh(slotKey, sectionKey) {
+  delete state.photos[slotKey];
+  const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+  const grid = document.getElementById(`photo-grid-${sectionKey}`);
+  if (grid) {
+    grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
+    loadPrevPhotosForSlots(slots);
+  }
+  updatePhotoProgress();
+  showToast('写真を削除しました','');
+}
+
+function filterPhotos(filter, sectionKey, evt) {
+  document.querySelectorAll('.photo-filter-tab').forEach(t => t.classList.remove('active'));
+  if (evt && evt.target) evt.target.classList.add('active');
+
+  const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+  const grid = document.getElementById(`photo-grid-${sectionKey}`);
+  if (!grid) return;
+
+  const cards = grid.querySelectorAll('.photo-card');
+  cards.forEach((card, i) => {
+    const slot = slots[i];
+    if (!slot) return;
+    // isNON: 写真番号が1000以上 or スロットのisNONフラグ
+    const isNON = slot.isNON || (slot.prevNo >= 1000);
+    let show = true;
+    if (filter === 'damage') show = !isNON;
+    if (filter === 'non')    show = isNON;
+    card.style.display = show ? '' : 'none';
+  });
+}
+
+// ===== カメラ撮影 =====
+function capturePhoto(slotKey, sectionKey) {
+  const input = document.getElementById('camera-input');
+  state.currentPhotoTarget = { slotKey, sectionKey };
+  input.onchange = handleCameraCapture;
+  input.click();
+}
+
+function handleCameraCapture(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const { slotKey, sectionKey } = state.currentPhotoTarget;
+    const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+    const slot = slots.find(s => s.key === slotKey) || { key: slotKey || `auto_${Date.now()}`, label: '撮影写真', required: false };
+
+    state.photos[slot.key] = { dataURL: ev.target.result, label: slot.label };
+    showToast('✅ 写真を保存しました', 'success');
+
+    // グリッドを更新
+    const grid = document.getElementById(`photo-grid-${sectionKey}`);
+    if (grid) {
+      grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
+      loadPrevPhotosForSlots(slots);
+    }
+    updatePhotoProgress();
+    // 撮り忘れ警告を更新
+    const missing = slots.filter(s => s.required && !state.photos[s.key]);
+    const alert = document.getElementById(`missing-${sectionKey}`);
+    if (alert) {
+      if (missing.length === 0) {
+        alert.classList.remove('show');
+      } else {
+        alert.classList.add('show');
+        alert.querySelector('p').innerHTML = `必須写真が <strong>${missing.length}枚</strong> 未撮影です。<br>${missing.slice(0,3).map(s=>s.label).join('、')}${missing.length > 3 ? '...' : ''}`;
+      }
+    }
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function deletePhoto(slotKey, sectionKey) {
+  delete state.photos[slotKey];
+  const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+  const grid = document.getElementById(`photo-grid-${sectionKey}`);
+  if (grid) grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
+  updatePhotoProgress();
+  showToast('写真を削除しました', '');
+}
+
+// ===== ダウンロード =====
+function downloadDrawings() {
+  const keys = Object.keys(state.drawings);
+  if (keys.length === 0) { showToast('保存された書き込みがありません', 'error'); return; }
+  keys.forEach(key => {
+    const a = document.createElement('a');
+    a.href = state.drawings[key];
+    a.download = `${state.pdfName}_書込_${key}.png`;
+    a.click();
+  });
+  showToast(`✅ ${keys.length}枚の書き込み図面を保存`, 'success');
+}
+
+function downloadPhotos() {
+  const keys = Object.keys(state.photos);
+  if (keys.length === 0) { showToast('撮影写真がありません', 'error'); return; }
+  let count = 0;
+  keys.forEach(key => {
+    const photo = state.photos[key];
+    const a = document.createElement('a');
+    a.href = photo.dataURL;
+    a.download = `${state.pdfName}_${photo.label || key}.jpg`;
+    a.click();
+    count++;
+  });
+  showToast(`✅ ${count}枚の写真を保存`, 'success');
+}
+
+// ===== ナビゲーション =====
+// 現在どの画面にいるかだけ管理
+// home → menu → viewer の3段階のみ
+let currentScreen = 'home'; // 'home' | 'menu' | 'viewer'
+
+function showScreen(name) {
+  const map = { home: 'screen-home', menu: 'screen-menu', viewer: 'screen-viewer' };
+  const order = ['home', 'menu', 'viewer'];
+  const fromIdx = order.indexOf(currentScreen);
+  const toIdx = order.indexOf(name);
+  const direction = toIdx > fromIdx ? 'forward' : 'backward';
+
+  const fromEl = document.getElementById(map[currentScreen]);
+  const toEl   = document.getElementById(map[name]);
+
+  // 全部リセット
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('is-active', 'is-behind');
+  });
+
+  if (direction === 'forward') {
+    fromEl.classList.add('is-behind');
+    toEl.classList.add('is-active');
+  } else {
+    // 後ろにいた画面（to）を手前に戻す
+    toEl.classList.add('is-active');
+    // fromは右に消える（何もクラス付けない = translateX(100%)のデフォルト）
+  }
+
+  toEl.scrollTop = 0;
+  currentScreen = name;
+}
+
+function goBack() {
+  if (currentScreen === 'viewer') {
+    showScreen('menu');
+    showMenuContent();
+    document.getElementById('topbar-title').textContent = '橋梁点検メニュー';
+  } else if (currentScreen === 'menu') {
+    showScreen('home');
+    document.getElementById('topbar').style.display = 'none';
+    state.mode = null;
+  }
+}
+
+// ===== ユーティリティ =====
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (type ? ' ' + type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = '', 2500);
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('show');
+}
+
+// ドラッグ&ドロップ
+const uz = document.getElementById('upload-zone');
+uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('dragover'); });
+uz.addEventListener('dragleave', () => uz.classList.remove('dragover'));
+uz.addEventListener('drop', e => {
+  e.preventDefault(); uz.classList.remove('dragover');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') {
+    const dt = new DataTransfer(); dt.items.add(f);
+    const input = document.getElementById('file-input');
+    input.files = dt.files;
+    loadPDF(input);
+  }
+});
+
+// 初期表示: ホームをis-activeに
+document.getElementById('screen-home').classList.add('is-active');
+currentScreen = 'home';
+</script>
+</body>
+</html>
