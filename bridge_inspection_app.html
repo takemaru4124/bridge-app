@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.6</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.7</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1709,6 +1709,21 @@ function setupDrawEvents(canvas, svg, key) {
     ds.lastX  = pos.nx; ds.lastY  = pos.ny; // 最後の座標を初期化
 
     if (ds.tool === 'pen' || ds.tool === 'eraser') {
+      // キャンバスのCSSサイズと実ピクセルサイズを同期
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = canvas.offsetWidth;
+      const cssH = canvas.offsetHeight;
+      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        // サイズが合っていない場合は修正（描画内容を保持）
+        const saved = canvas.toDataURL();
+        canvas.width  = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+        if (saved && saved !== 'data:,') {
+          const img = new Image();
+          img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          img.src = saved;
+        }
+      }
       ds.penHistory.push(canvas.toDataURL());
       if (ds.penHistory.length > 30) ds.penHistory.shift();
       const ctx = canvas.getContext('2d');
@@ -1729,21 +1744,28 @@ function setupDrawEvents(canvas, svg, key) {
 
     if (ds.tool === 'pen') {
       const ctx = canvas.getContext('2d');
-      const dpr = window.devicePixelRatio;
+      const dpr = window.devicePixelRatio || 1;
       ctx.lineWidth   = mmToPx(ds.sizeMM, dpr);
       ctx.lineCap     = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = ds.color;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.lineTo(pos.x, pos.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      // 確実に画面に反映
+      requestAnimationFrame(() => {});
     } else if (ds.tool === 'eraser') {
       const ctx = canvas.getContext('2d');
-      const dpr = window.devicePixelRatio;
+      const dpr = window.devicePixelRatio || 1;
       ctx.lineWidth = mmToPx(ds.sizeMM * 4, dpr);
       ctx.lineCap   = 'round'; ctx.lineJoin = 'round';
       ctx.globalCompositeOperation = 'destination-out';
-      ctx.lineTo(pos.x, pos.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      requestAnimationFrame(() => {});
     } else if (ds.tool === 'line' || ds.tool === 'arrow') {
       // プレビュー線
       renderPreviewLine(key, ds.startX, ds.startY, pos.nx, pos.ny, ds.color, ds.sizeMM, ds.tool === 'arrow');
