@@ -1636,20 +1636,23 @@ function setupDrawEvents(canvas, svg, key) {
   const container = canvas.parentElement;
 
   const getPos = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const dpr  = window.devicePixelRatio;
-    const src  = e.touches ? e.touches[0] : e;
+    const rect   = canvas.getBoundingClientRect();
+    const dpr    = window.devicePixelRatio;
+    const src    = e.touches ? e.touches[0] : e;
+    // ズームラッパーのscaleを考慮して正規化座標を計算
+    // canvas.getBoundingClientRect()はズーム後の実際のサイズを返すのでそのまま使える
     return {
-      x: (src.clientX - rect.left) / rect.width  * canvas.width,
-      y: (src.clientY - rect.top)  / rect.height * canvas.height,
-      // 正規化座標（0〜1）でオブジェクト保存
+      x:  (src.clientX - rect.left) / rect.width  * canvas.width,
+      y:  (src.clientY - rect.top)  / rect.height * canvas.height,
       nx: (src.clientX - rect.left) / rect.width,
-      ny: (src.clientY - rect.top)  / rect.height
+      ny: (src.clientY - rect.top)  / rect.height,
     };
   };
 
   // ===== ポインタ開始 =====
   const onStart = (e) => {
+    // 2本指タッチはピンチズームに渡す
+    if (e.touches && e.touches.length >= 2) return;
     e.preventDefault();
     const ds = drawState[key];
     const pos = getPos(e);
@@ -1673,6 +1676,7 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ移動 =====
   const onMove = (e) => {
+    if (e.touches && e.touches.length >= 2) return;
     e.preventDefault();
     const ds = drawState[key];
     if (!ds.drawing) return;
@@ -1811,12 +1815,8 @@ function renderSVGObjects(key) {
   const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
   const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
 
-  // 選択中オブジェクトがあれば編集パネルを開く
-  if (ds.selectedId) {
-    openEditPanel(key);
-  } else {
-    closeEditPanel();
-  }
+  // 選択が外れたら編集パネルを閉じる（ボタンで開く方式）
+  if (!ds.selectedId) closeEditPanel();
 
   ds.objects.forEach(obj => {
     const x1 = obj.x1 * W, y1 = obj.y1 * H;
@@ -1928,24 +1928,76 @@ function renderSVGObjects(key) {
 
     svg.appendChild(g);
 
-    // 選択時: 回転ハンドルをSVGのforeignObjectで表示
+    // 選択時: 回転ハンドル（SVG circle）と編集ボタン（SVG circle）を表示
     if (isSel) {
       const hx = cx;
       const hy = Math.min(y1, y2) - 28;
-      const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-      fo.setAttribute('x', hx - 12);
-      fo.setAttribute('y', hy - 12);
-      fo.setAttribute('width', 24);
-      fo.setAttribute('height', 24);
-      fo.setAttribute('overflow', 'visible');
-      fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml"
-        style="width:24px;height:24px;background:var(--accent);border-radius:50%;
-               border:2px solid #fff;display:flex;align-items:center;justify-content:center;
-               font-size:11px;color:#fff;cursor:grab;box-shadow:0 2px 8px rgba(0,0,0,.4);
-               touch-action:none;"
-        onmousedown="startRotateHandle(event,'${key}')"
-        ontouchstart="startRotateHandle(event,'${key}')">↻</div>`;
-      svg.appendChild(fo);
+
+      // 回転ハンドル（↻）
+      const rotGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+      rotGroup.style.cursor = 'grab';
+
+      const rotCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      rotCircle.setAttribute('cx', hx);
+      rotCircle.setAttribute('cy', hy);
+      rotCircle.setAttribute('r', 14);
+      rotCircle.setAttribute('fill', 'var(--accent)');
+      rotCircle.setAttribute('stroke', '#fff');
+      rotCircle.setAttribute('stroke-width', '2');
+      rotGroup.appendChild(rotCircle);
+
+      const rotText = document.createElementNS('http://www.w3.org/2000/svg','text');
+      rotText.setAttribute('x', hx);
+      rotText.setAttribute('y', hy + 4);
+      rotText.setAttribute('text-anchor', 'middle');
+      rotText.setAttribute('fill', '#fff');
+      rotText.setAttribute('font-size', '13');
+      rotText.setAttribute('pointer-events', 'none');
+      rotText.textContent = '↻';
+      rotGroup.appendChild(rotText);
+
+      // タッチ・マウスイベント（stopPropagationで選択解除を防ぐ）
+      const onRotStart = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        startRotateHandle(e, key);
+      };
+      rotGroup.addEventListener('mousedown',  onRotStart);
+      rotGroup.addEventListener('touchstart', onRotStart, { passive: false });
+      svg.appendChild(rotGroup);
+
+      // 編集ボタン（✏️）
+      const editGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+      editGroup.style.cursor = 'pointer';
+
+      const editCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      editCircle.setAttribute('cx', hx + 36);
+      editCircle.setAttribute('cy', hy);
+      editCircle.setAttribute('r', 14);
+      editCircle.setAttribute('fill', '#f59e0b');
+      editCircle.setAttribute('stroke', '#fff');
+      editCircle.setAttribute('stroke-width', '2');
+      editGroup.appendChild(editCircle);
+
+      const editText = document.createElementNS('http://www.w3.org/2000/svg','text');
+      editText.setAttribute('x', hx + 36);
+      editText.setAttribute('y', hy + 4);
+      editText.setAttribute('text-anchor', 'middle');
+      editText.setAttribute('fill', '#fff');
+      editText.setAttribute('font-size', '11');
+      editText.setAttribute('pointer-events', 'none');
+      editText.textContent = '編集';
+      editGroup.appendChild(editText);
+
+      editGroup.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openEditPanel(key);
+      });
+      editGroup.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        openEditPanel(key);
+      });
+      svg.appendChild(editGroup);
     }
   });
 }
