@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.0.6</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.0.7</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1396,10 +1396,13 @@ function setupPinchZoom(key) {
   const inner   = document.getElementById(`zoom-inner-${key}`);
   if (!wrapper || !inner) return;
 
-  let scale = 1;
+  let scale = 1, lastScale = 1;
   let initDist = 0;
-  let lastScale = 1;
   let isPinching = false;
+  // ズーム原点（wrapper左上からの距離）
+  let originX = 0, originY = 0;
+  // パン量
+  let panX = 0, panY = 0, lastPanX = 0, lastPanY = 0;
 
   const getDist = (t) => {
     const dx = t[0].clientX - t[1].clientX;
@@ -1408,23 +1411,29 @@ function setupPinchZoom(key) {
   };
 
   const applyTransform = () => {
-    inner.style.transform = `scale(${scale})`;
-    inner.style.transformOrigin = 'top left';
+    inner.style.transformOrigin = `${originX}px ${originY}px`;
+    inner.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
   };
 
-  // 2本指タッチ開始
   wrapper.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
       isPinching = true;
       initDist  = getDist(e.touches);
       lastScale = scale;
+      lastPanX  = panX;
+      lastPanY  = panY;
+      // ピンチの中心点をズーム原点に設定
+      const wRect = wrapper.getBoundingClientRect();
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      originX = (midX - wRect.left - panX) / scale;
+      originY = (midY - wRect.top  - panY) / scale;
       e.preventDefault();
     } else {
       isPinching = false;
     }
   }, { passive: false });
 
-  // 2本指タッチ移動
   wrapper.addEventListener('touchmove', (e) => {
     if (isPinching && e.touches.length === 2) {
       const newDist = getDist(e.touches);
@@ -1434,13 +1443,12 @@ function setupPinchZoom(key) {
     }
   }, { passive: false });
 
-  // タッチ終了
   wrapper.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) {
       isPinching = false;
-      // scale < 1になったらリセット
-      if (scale < 1) {
-        scale = 1;
+      if (scale <= 1) {
+        scale = 1; panX = 0; panY = 0;
+        originX = 0; originY = 0;
         applyTransform();
       }
     }
@@ -2376,6 +2384,17 @@ function renderPhotoViewer(item, tabs, content) {
 
   // 各スロットの前回写真を非同期ロード
   loadPrevPhotosForSlots(slots);
+
+  // 複数径間の場合は初期表示を1径間目のみに
+  if (isDamage10) {
+    const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
+    if (spans.length > 1) {
+      // 少し待ってからフィルタ適用（DOM生成後）
+      setTimeout(() => {
+        filterBySpan(spans[0], item.key, null);
+      }, 100);
+    }
+  }
 }
 
 function togglePrevRecord(id) {
@@ -2511,9 +2530,11 @@ function deletePhotoAndRefresh(slotKey, sectionKey) {
 }
 
 function filterBySpan(span, sectionKey, evt) {
-  document.querySelectorAll('.photo-filter-tabs:first-child .photo-filter-tab')
-    .forEach(t => t.classList.remove('active'));
-  if (evt && evt.target) evt.target.classList.add('active');
+  // タブのactiveを切り替え
+  const allSpanTabs = evt?.target?.closest('.photo-filter-tabs')
+    ?.querySelectorAll('.photo-filter-tab');
+  allSpanTabs?.forEach(t => t.classList.remove('active'));
+  if (evt?.target) evt.target.classList.add('active');
 
   const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
   const grid  = document.getElementById(`photo-grid-${sectionKey}`);
@@ -2523,6 +2544,7 @@ function filterBySpan(span, sectionKey, evt) {
   cards.forEach((card, i) => {
     const slot = slots[i];
     if (!slot) return;
+    // 選択した径間のみ表示（span=0なら全表示）
     const show = span === 0 || (slot.span || 1) === span;
     card.style.display = show ? '' : 'none';
   });
