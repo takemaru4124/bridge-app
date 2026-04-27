@@ -793,17 +793,31 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
       .map(i => ({ str: i.str.trim(), x: i.transform[4], y: H - i.transform[5] }))
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
-    // 写真番号エントリ収集
+    // 写真番号エントリ収集（径間番号も取得）
     for (let i = 0; i < items.length; i++) {
       if (items[i].str === '写真番号') {
         for (let j = i + 1; j < Math.min(i + 6, items.length); j++) {
           const nxt = items[j];
           if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
           if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
+            // 径間番号を取得（「径間番号」テキストの直後の数字）
+            let span = 1;
+            for (let k = j + 1; k < Math.min(j + 6, items.length); k++) {
+              if (items[k].str === '径間番号') {
+                for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
+                  if (/^\d+$/.test(items[l].str)) {
+                    span = parseInt(items[l].str);
+                    break;
+                  }
+                }
+                break;
+              }
+            }
             allEntries.push({
               no: parseInt(nxt.str),
+              span,  // 径間番号
               tx: items[i].x / W,
-              globalY: pi + items[i].y / H, // ページオフセット込みのY
+              globalY: pi + items[i].y / H,
               pnum,
             });
             break;
@@ -850,14 +864,16 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
 
     if (best !== null) {
       used.add(best);
-      const img = allImages[best];
+      const img  = allImages[best];
       const isNON = entry.no >= 1000;
+      const span  = entry.span || 1;
       slots.push({
-        key: `${prefix}p${img.pnum}_${entry.no}`,
-        label: `No.${entry.no}`,
+        key:      `${prefix}span${span}_p${img.pnum}_${entry.no}`,
+        label:    `No.${entry.no}`,
+        span,
         required: true, isNON,
-        prevPage: img.pnum,  // 画像が実際にあるページを使用
-        prevNo: entry.no,
+        prevPage: img.pnum,
+        prevNo:   entry.no,
         crop: { x: img.x, y: img.y, w: img.w, h: img.h },
       });
     }
@@ -1723,7 +1739,8 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ終了 =====
   const onEnd = (e) => {
-    e.preventDefault();
+    // 2本指タッチ終了はスキップ
+    if (e.touches && e.touches.length >= 1) return;
     const ds = drawState[key];
     if (!ds.drawing) return;
     ds.drawing = false;
@@ -1760,6 +1777,14 @@ function setupDrawEvents(canvas, svg, key) {
       renderSVGObjects(key);
     }
   };
+
+  // タッチキャンセル時もdrawingフラグをリセット
+  canvas.addEventListener('touchcancel', () => {
+    if (drawState[key]) {
+      drawState[key].drawing = false;
+      clearPreviewLine(key);
+    }
+  });
 
   canvas.addEventListener('mousedown',  onStart);
   canvas.addEventListener('mousemove',  onMove);
@@ -2313,13 +2338,29 @@ function renderPhotoViewer(item, tabs, content) {
       ${missingRequired.slice(0,3).map(s=>s.label).join('、')}${missingRequired.length > 3 ? '…' : ''}</p>
     </div>`;
 
-  // ③ NON/損傷フィルタ（その１０のみ）
-  const filterHTML = isDamage10 ? `
-    <div class="photo-filter-tabs">
-      <div class="photo-filter-tab active" onclick="filterPhotos('all','${item.key}',event)">全て</div>
-      <div class="photo-filter-tab" onclick="filterPhotos('damage','${item.key}',event)">損傷</div>
-      <div class="photo-filter-tab" onclick="filterPhotos('non','${item.key}',event)">NON</div>
-    </div>` : '';
+  // ③ NON/損傷フィルタ + 径間タブ（その１０のみ）
+  let filterHTML = '';
+  if (isDamage10) {
+    // 径間番号の一覧を取得
+    const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
+    const spanTabsHTML = spans.length > 1 ? `
+      <div class="photo-filter-tabs" style="margin-bottom:4px;">
+        ${spans.map((sp, i) => `
+          <div class="photo-filter-tab ${i===0?'active':''}"
+               onclick="filterBySpan(${sp},'${item.key}',event)">
+            ${sp}径間
+          </div>`).join('')}
+        <div class="photo-filter-tab" onclick="filterBySpan(0,'${item.key}',event)">全径間</div>
+      </div>` : '';
+
+    filterHTML = `
+      ${spanTabsHTML}
+      <div class="photo-filter-tabs">
+        <div class="photo-filter-tab active" onclick="filterPhotos('all','${item.key}',event)">全て</div>
+        <div class="photo-filter-tab" onclick="filterPhotos('damage','${item.key}',event)">損傷</div>
+        <div class="photo-filter-tab" onclick="filterPhotos('non','${item.key}',event)">NON</div>
+      </div>`;
+  }
 
   // ④ ヘッダー（枚数表示）
   const captured = slots.filter(s => state.photos[s.key]).length;
