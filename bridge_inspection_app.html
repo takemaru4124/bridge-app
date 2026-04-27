@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.1</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.2</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -776,9 +776,8 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
   if (pageNums.length === 0) return [];
 
   // 全ページから写真番号テキストと画像座標を収集
-  // ページ番号をy座標オフセットとして使用（仮想的な縦長ページとして扱う）
-  const allEntries = []; // { no, tx, globalY, pnum }
-  const allImages  = []; // { x, y, w, h, pnum, crop }
+  const allEntries = [];
+  const allImages  = [];
 
   for (let pi = 0; pi < pageNums.length; pi++) {
     const pnum = pageNums[pi];
@@ -786,7 +785,6 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
     const vp   = page.getViewport({ scale: 1 });
     const W = vp.width, H = vp.height;
 
-    // テキスト取得
     const tc = await page.getTextContent();
     const items = tc.items
       .filter(i => i.str && i.str.trim())
@@ -800,7 +798,6 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
           const nxt = items[j];
           if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
           if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
-            // 径間番号を取得（「径間番号」テキストの直後の数字）
             let span = 1;
             for (let k = j + 1; k < Math.min(j + 6, items.length); k++) {
               if (items[k].str === '径間番号') {
@@ -815,7 +812,7 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
             }
             allEntries.push({
               no: parseInt(nxt.str),
-              span,  // 径間番号
+              span,
               tx: items[i].x / W,
               globalY: pi + items[i].y / H,
               pnum,
@@ -829,11 +826,7 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
     // 画像座標収集
     const imgCoords = await getPageImageCoords(page, W, H);
     for (const img of imgCoords) {
-      allImages.push({
-        ...img,
-        globalY: pi + img.y, // ページオフセット込みのY
-        pnum,
-      });
+      allImages.push({ ...img, globalY: pi + img.y, pnum });
     }
   }
 
@@ -841,41 +834,50 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
   allEntries.sort((a, b) => a.globalY - b.globalY || a.tx - b.tx);
   allImages.sort((a, b) => a.globalY - b.globalY || a.x - b.x);
 
-  // 列優先・最近傍マッチング（ページをまたいで検索）
-  const used = new Set();
+  // 径間番号ごとに分けてマッチング
+  const spans = [...new Set(allEntries.map(e => e.span))].sort((a,b) => a-b);
+  const used  = new Set();
   const slots = [];
 
-  for (const entry of allEntries) {
-    let best = null, bestScore = 9999;
+  for (const span of spans) {
+    const spanEntries = allEntries.filter(e => e.span === span);
+    const spanImages  = allImages.filter((img, idx) => !used.has(idx));
 
-    for (let idx = 0; idx < allImages.length; idx++) {
-      if (used.has(idx)) continue;
-      const img = allImages[idx];
+    // 同じ径間のエントリと未使用画像でマッチング
+    const localUsed = new Set();
 
-      // 同じ列か（x差0.12以内）
-      if (Math.abs(img.x - entry.tx) >= 0.12) continue;
+    for (const entry of spanEntries) {
+      let best = null, bestScore = 9999;
 
-      // globalY差（上下どちらも許容、ただし1ページ分以上は無視）
-      const dy = Math.abs(img.globalY - entry.globalY);
-      if (dy > 1.0) continue;
+      for (let idx = 0; idx < allImages.length; idx++) {
+        if (used.has(idx) || localUsed.has(idx)) continue;
+        const img = allImages[idx];
 
-      if (dy < bestScore) { bestScore = dy; best = idx; }
-    }
+        // 同じ列か（x差0.12以内）
+        if (Math.abs(img.x - entry.tx) >= 0.12) continue;
 
-    if (best !== null) {
-      used.add(best);
-      const img  = allImages[best];
-      const isNON = entry.no >= 1000;
-      const span  = entry.span || 1;
-      slots.push({
-        key:      `${prefix}span${span}_p${img.pnum}_${entry.no}`,
-        label:    `No.${entry.no}`,
-        span,
-        required: true, isNON,
-        prevPage: img.pnum,
-        prevNo:   entry.no,
-        crop: { x: img.x, y: img.y, w: img.w, h: img.h },
-      });
+        // globalY差（1ページ分以内）
+        const dy = Math.abs(img.globalY - entry.globalY);
+        if (dy > 1.0) continue;
+
+        if (dy < bestScore) { bestScore = dy; best = idx; }
+      }
+
+      if (best !== null) {
+        used.add(best);
+        localUsed.add(best);
+        const img  = allImages[best];
+        const isNON = entry.no >= 1000;
+        slots.push({
+          key:      `${prefix}span${span}_p${img.pnum}_${entry.no}`,
+          label:    `No.${entry.no}`,
+          span,
+          required: true, isNON,
+          prevPage: img.pnum,
+          prevNo:   entry.no,
+          crop: { x: img.x, y: img.y, w: img.w, h: img.h },
+        });
+      }
     }
   }
 
@@ -1666,26 +1668,35 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ開始 =====
   const onStart = (e) => {
-    // 2本指タッチはピンチズームに渡す
     if (e.touches && e.touches.length >= 2) return;
     e.preventDefault();
     const ds = drawState[key];
     const pos = getPos(e);
+
+    if (ds.tool === 'select') {
+      // 選択ツール: drawingフラグは立てない
+      const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
+      if (hit) {
+        ds.selectedId = hit.id;
+        ds.drawing = true; // ドラッグ移動用
+        ds.startX = pos.nx; ds.startY = pos.ny;
+      } else {
+        ds.selectedId = null;
+        ds.drawing = false;
+      }
+      renderSVGObjects(key);
+      return;
+    }
+
     ds.drawing = true;
     ds.startX = pos.nx; ds.startY = pos.ny;
 
     if (ds.tool === 'pen' || ds.tool === 'eraser') {
-      // フリーハンド: スナップショット
       ds.penHistory.push(canvas.toDataURL());
       if (ds.penHistory.length > 30) ds.penHistory.shift();
       const ctx = canvas.getContext('2d');
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
-    } else if (ds.tool === 'select') {
-      // 選択: ヒットテスト（SVGオブジェクト）
-      const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
-      ds.selectedId = hit ? hit.id : null;
-      renderSVGObjects(key);
     }
   };
 
@@ -1735,17 +1746,18 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ終了 =====
   const onEnd = (e) => {
-    // 2本指タッチ終了はスキップ
+    // 残っている指が1本以上あればスキップ
     if (e.touches && e.touches.length >= 1) return;
     const ds = drawState[key];
     if (!ds.drawing) return;
     ds.drawing = false;
 
+    const rect = canvas.getBoundingClientRect();
+    const src  = e.changedTouches ? e.changedTouches[0] : e;
+    const ex   = (src.clientX - rect.left) / rect.width;
+    const ey   = (src.clientY - rect.top)  / rect.height;
+
     if (ds.tool === 'line' || ds.tool === 'arrow') {
-      const rect = canvas.getBoundingClientRect();
-      const src  = e.changedTouches ? e.changedTouches[0] : e;
-      const ex   = (src.clientX - rect.left) / rect.width;
-      const ey   = (src.clientY - rect.top)  / rect.height;
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
       if (dist > 0.01) {
         ds.objects.push({
@@ -1756,16 +1768,24 @@ function setupDrawEvents(canvas, svg, key) {
       }
       clearPreviewLine(key);
       renderSVGObjects(key);
+
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse') {
-      const rect = canvas.getBoundingClientRect();
-      const src  = e.changedTouches ? e.changedTouches[0] : e;
-      const ex   = (src.clientX - rect.left) / rect.width;
-      const ey   = (src.clientY - rect.top)  / rect.height;
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
       if (dist > 0.01) {
+        // ★ 正方形アシスト: 縦横の差が小さい場合は正方形にスナップ
+        let x2 = ex, y2 = ey;
+        const dw = Math.abs(ex - ds.startX);
+        const dh = Math.abs(ey - ds.startY);
+        const ratio = Math.min(dw, dh) / Math.max(dw, dh);
+        if (ratio > 0.85) {
+          // 85%以上の比率なら正方形にスナップ
+          const size = Math.min(dw, dh);
+          x2 = ds.startX + (ex > ds.startX ? size : -size);
+          y2 = ds.startY + (ey > ds.startY ? size : -size);
+        }
         ds.objects.push({
           id: Date.now(), type: ds.tool,
-          x1: ds.startX, y1: ds.startY, x2: ex, y2: ey,
+          x1: ds.startX, y1: ds.startY, x2, y2,
           color: ds.color, sizeMM: ds.sizeMM, pattern: ds.pattern
         });
       }
