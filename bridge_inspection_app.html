@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.0.9</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.1</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -903,24 +903,32 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
       }))
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
-    // 写真番号エントリを抽出
-    // 「写真番号」テキストの直後に来る数字を取得
-    const photoEntries = []; // { no, tx, ty, memo }
+    // 写真番号エントリを抽出（径間番号も取得）
+    const photoEntries = [];
     for (let i = 0; i < items.length; i++) {
       if (items[i].str === '写真番号') {
-        // 次の数字ワードを探す（最大5アイテム先まで）
         for (let j = i + 1; j < Math.min(i + 6, items.length); j++) {
           const nxt = items[j];
-          // 他のキーワードが来たら終了
           if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
-          // 純粋な整数（写真番号）
           if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
             const no = parseInt(nxt.str);
-            // 「写真番号」テキスト自体の座標を記録
+            // 径間番号を取得
+            let span = 1;
+            for (let k = j + 1; k < Math.min(j + 6, items.length); k++) {
+              if (items[k].str === '径間番号') {
+                for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
+                  if (/^\d+$/.test(items[l].str)) {
+                    span = parseInt(items[l].str);
+                    break;
+                  }
+                }
+                break;
+              }
+            }
             photoEntries.push({
-              no,
-              tx: items[i].x / W,   // 正規化x
-              ty: items[i].y / H,   // 正規化y（スクリーン座標）
+              no, span,
+              tx: items[i].x / W,
+              ty: items[i].y / H,
             });
             break;
           }
@@ -962,9 +970,11 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
         used.add(best);
         const coord = imgCoords[best];
         const isNON = entry.no >= 1000;
+        const span  = entry.span || 1;
         slots.push({
-          key: `${prefix}p${pnum}_${entry.no}`,
+          key:  `${prefix}span${span}_p${pnum}_${entry.no}`,
           label: `No.${entry.no}`,
+          span,
           required: true, isNON,
           prevPage: pnum, prevNo: entry.no,
           crop: coord,
@@ -1598,16 +1608,24 @@ function setupDrawCanvas(key, imgData) {
       };
     }
 
-    // キャンバスリサイズ
+    // キャンバスリサイズ（ズーム前の自然サイズを基準に）
     const resizeCanvas = () => {
+      const inner = document.getElementById(`zoom-inner-${key}`);
+      // ズーム中（transform scale）は無視して自然サイズを取得
+      const prevTransform = inner ? inner.style.transform : '';
+      if (inner) inner.style.transform = 'none';
+
       const rect = baseImg.getBoundingClientRect();
-      const dpr = window.devicePixelRatio;
+      const dpr  = window.devicePixelRatio;
       canvas.width  = rect.width  * dpr;
       canvas.height = rect.height * dpr;
+
+      if (inner) inner.style.transform = prevTransform;
+
       if (drawState[key]?.savedPenData) {
         const ctx = canvas.getContext('2d');
         const s = new Image();
-        s.onload = () => { ctx.drawImage(s,0,0,canvas.width,canvas.height); };
+        s.onload = () => { ctx.drawImage(s, 0, 0, canvas.width, canvas.height); };
         s.src = drawState[key].savedPenData;
       }
       renderSVGObjects(key);
@@ -1631,14 +1649,16 @@ function setupDrawEvents(canvas, svg, key) {
   const container = canvas.parentElement;
 
   const getPos = (e) => {
-    // getBoundingClientRect()はCSSスケール後の実際の画面上のサイズを返す
     const rect = canvas.getBoundingClientRect();
     const src  = e.touches ? e.touches[0] : e;
-    // 正規化座標（0〜1）: 画面上の位置をcanvasの論理サイズに変換
+    const dpr  = window.devicePixelRatio || 1;
+    // canvas.widthはdpr考慮済みの実ピクセル数
+    // rect.widthはCSSズーム後の表示サイズ
+    // 正規化座標は rect基準で計算（0〜1）
     const nx = (src.clientX - rect.left) / rect.width;
     const ny = (src.clientY - rect.top)  / rect.height;
     return {
-      x:  nx * canvas.width,   // canvas内ピクセル座標
+      x:  nx * canvas.width,
       y:  ny * canvas.height,
       nx, ny,
     };
@@ -2314,20 +2334,25 @@ function renderPhotoViewer(item, tabs, content) {
       ${missingRequired.slice(0,3).map(s=>s.label).join('、')}${missingRequired.length > 3 ? '…' : ''}</p>
     </div>`;
 
-  // ③ NON/損傷フィルタ + 径間タブ（その１０のみ）
+  // ③ フィルタタブ
   let filterHTML = '';
-  if (isDamage10) {
-    // 径間番号の一覧を取得
-    const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
-    const spanTabsHTML = spans.length > 1 ? `
-      <div class="photo-filter-tabs" style="margin-bottom:4px;">
-        ${spans.map((sp, i) => `
-          <div class="photo-filter-tab ${i===0?'active':''}"
-               onclick="filterBySpan(${sp},'${item.key}',event)">
-            ${sp}径間
-          </div>`).join('')}
-      </div>` : '';
 
+  // その３・その１０共通：径間タブを生成
+  const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
+  const spanTabsHTML = spans.length > 1 ? `
+    <div class="photo-filter-tabs" style="margin-bottom:4px;">
+      ${spans.map((sp, i) => `
+        <div class="photo-filter-tab ${i===0?'active':''}"
+             onclick="filterBySpan(${sp},'${item.key}',event)">
+          ${sp}径間
+        </div>`).join('')}
+    </div>` : '';
+
+  if (isSurvey3) {
+    // その３：径間タブのみ
+    filterHTML = spanTabsHTML;
+  } else if (isDamage10) {
+    // その１０：径間タブ + NON/損傷タブ
     filterHTML = `
       ${spanTabsHTML}
       <div class="photo-filter-tabs">
@@ -2384,11 +2409,15 @@ function renderPhotoViewer(item, tabs, content) {
   loadPrevPhotosForSlots(slots);
 
   // 複数径間の場合は初期表示を1径間目のみに
-  if (isDamage10) {
-    const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
-    photoFilter.span = spans.length > 1 ? spans[0] : 0;
-    photoFilter.type = 'damage';
+  const allSpans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
+  if (allSpans.length > 1) {
+    photoFilter.span = allSpans[0];
+    photoFilter.type = isDamage10 ? 'damage' : 'all';
     setTimeout(() => applyPhotoFilter(item.key), 100);
+  } else {
+    photoFilter.span = 0;
+    photoFilter.type = isDamage10 ? 'damage' : 'all';
+    if (isDamage10) setTimeout(() => applyPhotoFilter(item.key), 100);
   }
 }
 
