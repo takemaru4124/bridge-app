@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.9</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.0</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -653,42 +653,47 @@
 </div>
 
 <!-- 写真ポップアップ（その9からその10を表示）-->
-<div id="photo-popup" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.85);display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;">
-  <div style="background:var(--surface);border-radius:16px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;">
-    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+<div id="photo-popup" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.9);flex-direction:column;overflow-y:auto;-webkit-overflow-scrolling:touch;">
+  <div style="background:var(--surface);min-height:100%;display:flex;flex-direction:column;">
+    <!-- ヘッダー -->
+    <div style="position:sticky;top:0;z-index:10;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">
       <div>
-        <div style="font-size:13px;font-weight:700;color:var(--accent)" id="popup-title">写真番号1</div>
+        <div style="font-size:14px;font-weight:700;color:var(--accent)" id="popup-title">写真番号1</div>
         <div style="font-size:11px;color:var(--text2)" id="popup-label"></div>
       </div>
-      <button onclick="closePhotoPopup()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">✕ 閉じる</button>
+      <button onclick="closePhotoPopup()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;flex-shrink:0;">✕ 閉じる</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;">
+    <!-- 写真エリア -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;flex:1;">
       <!-- 前回写真 -->
-      <div>
-        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;">📷 前回写真</div>
-        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;">
-          <img id="popup-prev-img" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;">
-          <div id="popup-prev-none" style="color:var(--text2);font-size:12px;">なし</div>
+      <div style="display:flex;flex-direction:column;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;font-weight:600;">📷 前回写真</div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;">
+          <img id="popup-prev-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:none;">
+          <div id="popup-prev-none" style="color:var(--text2);font-size:12px;text-align:center;">
+            <div style="font-size:24px;margin-bottom:4px;">📄</div>
+            <div>なし</div>
+          </div>
         </div>
       </div>
       <!-- 今回写真 -->
-      <div>
-        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;">📸 今回撮影</div>
-        <div id="popup-current-wrap" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupTakePhoto()">
-          <img id="popup-current-img" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;">
-          <div id="popup-current-none" style="text-align:center;color:var(--text2);">
-            <div style="font-size:28px;margin-bottom:4px;">📷</div>
-            <div style="font-size:11px;">タップして撮影</div>
+      <div style="display:flex;flex-direction:column;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;font-weight:600;">📸 今回撮影</div>
+        <div id="popup-current-wrap" style="background:var(--surface2);border:2px dashed var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupTakePhoto()">
+          <img id="popup-current-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:none;">
+          <div id="popup-current-none" style="text-align:center;color:var(--text2);padding:16px;">
+            <div style="font-size:40px;margin-bottom:8px;">📷</div>
+            <div style="font-size:12px;font-weight:600;">タップして撮影</div>
           </div>
         </div>
         <input type="file" id="popup-camera-input" accept="image/*" capture="environment" style="display:none" onchange="popupPhotoSelected(this)">
-        <button id="popup-retake-btn" onclick="popupTakePhoto()" style="display:none;width:100%;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-size:12px;cursor:pointer;">📷 再撮影</button>
+        <button id="popup-retake-btn" onclick="popupTakePhoto()" style="display:none;width:100%;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:12px;cursor:pointer;">📷 再撮影</button>
       </div>
     </div>
     <!-- 前後ナビ -->
-    <div style="display:flex;gap:8px;padding:0 16px 16px;">
-      <button onclick="popupNav(-1)" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:13px;cursor:pointer;">◁ 前の写真</button>
-      <button onclick="popupNav(1)"  style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:13px;cursor:pointer;">次の写真 ▷</button>
+    <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);">
+      <button onclick="popupNav(-1)" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:12px;font-size:13px;cursor:pointer;">◁ 前の写真</button>
+      <button onclick="popupNav(1)"  style="flex:1;background:var(--accent);border:none;color:#fff;border-radius:8px;padding:12px;font-size:13px;cursor:pointer;font-weight:700;">次の写真 ▷</button>
     </div>
   </div>
 </div>
