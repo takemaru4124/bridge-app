@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.7</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.8</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -650,6 +650,47 @@
 <div id="screen-viewer" class="screen">
   <div class="viewer-tabs" id="viewer-tabs"></div>
   <div class="viewer-content" id="viewer-content"></div>
+</div>
+
+<!-- 写真ポップアップ（その9からその10を表示）-->
+<div id="photo-popup" style="display:none;position:fixed;inset:0;z-index:500;background:rgba(0,0,0,0.85);display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border-radius:16px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--accent)" id="popup-title">写真番号1</div>
+        <div style="font-size:11px;color:var(--text2)" id="popup-label"></div>
+      </div>
+      <button onclick="closePhotoPopup()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">✕ 閉じる</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;">
+      <!-- 前回写真 -->
+      <div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;">📷 前回写真</div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;">
+          <img id="popup-prev-img" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;">
+          <div id="popup-prev-none" style="color:var(--text2);font-size:12px;">なし</div>
+        </div>
+      </div>
+      <!-- 今回写真 -->
+      <div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;">📸 今回撮影</div>
+        <div id="popup-current-wrap" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupTakePhoto()">
+          <img id="popup-current-img" src="" alt="" style="width:100%;height:100%;object-fit:cover;display:none;">
+          <div id="popup-current-none" style="text-align:center;color:var(--text2);">
+            <div style="font-size:28px;margin-bottom:4px;">📷</div>
+            <div style="font-size:11px;">タップして撮影</div>
+          </div>
+        </div>
+        <input type="file" id="popup-camera-input" accept="image/*" capture="environment" style="display:none" onchange="popupPhotoSelected(this)">
+        <button id="popup-retake-btn" onclick="popupTakePhoto()" style="display:none;width:100%;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-size:12px;cursor:pointer;">📷 再撮影</button>
+      </div>
+    </div>
+    <!-- 前後ナビ -->
+    <div style="display:flex;gap:8px;padding:0 16px 16px;">
+      <button onclick="popupNav(-1)" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:13px;cursor:pointer;">◁ 前の写真</button>
+      <button onclick="popupNav(1)"  style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:13px;cursor:pointer;">次の写真 ▷</button>
+    </div>
+  </div>
 </div>
 
 <!-- オブジェクト編集パネル（描画ビューア用）-->
@@ -1358,6 +1399,10 @@ async function renderDrawViewer(item, tabs, content) {
           </div>
         </div>
       </div>
+      <div id="photo-link-panel-${drawKey}" style="display:none;padding:12px;background:var(--surface2);margin:8px 12px 80px;border-radius:12px;border:1px solid var(--border);">
+        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;">📷 損傷写真を確認・撮影</div>
+        <div id="photo-link-btns-${drawKey}" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+      </div>
     `;
     content.appendChild(section);
 
@@ -1366,7 +1411,152 @@ async function renderDrawViewer(item, tabs, content) {
     if (imgData) {
       setupDrawCanvas(drawKey, imgData);
     }
+
+    // その10の写真番号ボタンを生成（s9のみ）
+    if (item.key === 's9') {
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 500);
+    }
   }
+}
+
+// ===== その9→その10 写真番号ボタン生成 =====
+function renderPhotoLinkButtons(drawKey) {
+  const panel = document.getElementById(`photo-link-panel-${drawKey}`);
+  const btns  = document.getElementById(`photo-link-btns-${drawKey}`);
+  if (!panel || !btns) return;
+
+  // その10のスロットから損傷写真のみ取得（NON除く）
+  const damageSlots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+  if (damageSlots.length === 0) return;
+
+  panel.style.display = 'block';
+  btns.innerHTML = '';
+
+  // 径間ごとにグループ化
+  const spans = [...new Set(damageSlots.map(s => s.span || 1))].sort((a,b) => a-b);
+
+  spans.forEach(span => {
+    const spanSlots = damageSlots.filter(s => (s.span || 1) === span);
+    if (spans.length > 1) {
+      const label = document.createElement('div');
+      label.style.cssText = 'width:100%;font-size:10px;color:var(--text2);margin-top:4px;';
+      label.textContent = `${span}径間`;
+      btns.appendChild(label);
+    }
+    spanSlots.forEach(slot => {
+      const btn = document.createElement('button');
+      // 今回写真が撮影済みかどうかで色を変える
+      const hasPhoto = !!state.photos?.[slot.key];
+      btn.style.cssText = `
+        background:${hasPhoto ? 'var(--green)' : 'var(--surface)'};
+        border:1px solid ${hasPhoto ? 'var(--green)' : 'var(--border)'};
+        color:${hasPhoto ? '#fff' : 'var(--text)'};
+        border-radius:8px;padding:6px 10px;font-size:11px;
+        font-weight:700;cursor:pointer;white-space:nowrap;
+      `;
+      btn.textContent = `No.${slot.prevNo}`;
+      btn.onclick = () => openPhotoPopup(slot.key);
+      btns.appendChild(btn);
+    });
+  });
+}
+
+// ===== 写真ポップアップ =====
+let _popupSlotKey = null;
+let _popupSlotIndex = 0;
+
+function openPhotoPopup(slotKey) {
+  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+  const idx   = slots.findIndex(s => s.key === slotKey);
+  if (idx < 0) return;
+
+  _popupSlotKey   = slotKey;
+  _popupSlotIndex = idx;
+  updatePopup(slots[idx]);
+
+  const popup = document.getElementById('photo-popup');
+  popup.style.display = 'flex';
+}
+
+function updatePopup(slot) {
+  if (!slot) return;
+
+  // タイトル・ラベル
+  document.getElementById('popup-title').textContent = `📷 写真番号 No.${slot.prevNo}`;
+  document.getElementById('popup-label').textContent  = slot.label || '';
+
+  // 前回写真
+  const prevImg  = document.getElementById('popup-prev-img');
+  const prevNone = document.getElementById('popup-prev-none');
+  const cached   = prevPhotoCache[slot.key];
+  if (cached) {
+    prevImg.src = cached;
+    prevImg.style.display = 'block';
+    prevNone.style.display = 'none';
+  } else {
+    prevImg.style.display = 'none';
+    prevNone.style.display = 'block';
+    // 非同期ロード
+    getPrevPhotoForSlot(slot).then(data => {
+      if (data) {
+        prevImg.src = data;
+        prevImg.style.display = 'block';
+        prevNone.style.display = 'none';
+      }
+    });
+  }
+
+  // 今回写真
+  const currentImg  = document.getElementById('popup-current-img');
+  const currentNone = document.getElementById('popup-current-none');
+  const retakeBtn   = document.getElementById('popup-retake-btn');
+  const photo = state.photos?.[slot.key];
+  if (photo) {
+    currentImg.src = photo;
+    currentImg.style.display = 'block';
+    currentNone.style.display = 'none';
+    retakeBtn.style.display = 'block';
+  } else {
+    currentImg.style.display = 'none';
+    currentNone.style.display = 'flex';
+    retakeBtn.style.display = 'none';
+  }
+}
+
+function closePhotoPopup() {
+  document.getElementById('photo-popup').style.display = 'none';
+  _popupSlotKey = null;
+  // 写真番号ボタンの色を更新
+  document.querySelectorAll('[id^="photo-link-btns-"]').forEach(el => {
+    const drawKey = el.id.replace('photo-link-btns-', '');
+    renderPhotoLinkButtons(drawKey);
+  });
+}
+
+function popupTakePhoto() {
+  document.getElementById('popup-camera-input').click();
+}
+
+function popupPhotoSelected(input) {
+  if (!input.files[0] || !_popupSlotKey) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    if (!state.photos) state.photos = {};
+    state.photos[_popupSlotKey] = e.target.result;
+    const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+    const slot  = slots.find(s => s.key === _popupSlotKey);
+    if (slot) updatePopup(slot);
+    showToast('✅ 写真を保存しました', 'success');
+  };
+  reader.readAsDataURL(input.files[0]);
+  input.value = '';
+}
+
+function popupNav(dir) {
+  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+  _popupSlotIndex = Math.max(0, Math.min(slots.length - 1, _popupSlotIndex + dir));
+  _popupSlotKey   = slots[_popupSlotIndex].key;
+  updatePopup(slots[_popupSlotIndex]);
 }
 
 // ===== ツールバー最小化 =====
