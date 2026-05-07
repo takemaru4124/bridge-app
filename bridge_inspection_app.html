@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.2</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.3</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1417,6 +1417,8 @@ async function renderCombinedViewer(item, tabs, content) {
             <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
           </div>
           <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
+            <button class="draw-tool-btn" id="tool-scroll-${drawKey}" onclick="setTool('scroll','${drawKey}')">🖐 スクロール</button>
+            <span class="draw-toolbar-sep"></span>
             <button class="draw-tool-btn active" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
             <button class="draw-tool-btn"        id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
             <button class="draw-tool-btn"        id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
@@ -1476,7 +1478,7 @@ async function renderCombinedViewer(item, tabs, content) {
 
       const imgData = await getPageImage(p);
       if (imgData) setupDrawCanvas(drawKey, imgData);
-      setTimeout(() => renderPhotoLinkButtons(drawKey), 600);
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 800);
       setTimeout(() => {
         setupToolbarDrag(drawKey);
         setupPinchZoom(drawKey);
@@ -1584,23 +1586,46 @@ async function renderDrawViewer(item, tabs, content) {
 }
 
 // ===== その9→その10 写真番号ボタン生成 =====
-function renderPhotoLinkButtons(drawKey) {
+async function renderPhotoLinkButtons(drawKey) {
   const panel = document.getElementById(`photo-link-panel-${drawKey}`);
   const btns  = document.getElementById(`photo-link-btns-${drawKey}`);
   if (!panel || !btns) return;
 
-  // その10のスロットから損傷写真のみ取得（NON除く）
   const damageSlots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
   if (damageSlots.length === 0) return;
+
+  // ページ番号をdrawKeyから取得（s9s10_p16 → 16）
+  const pageMatch = drawKey.match(/p(\d+)$/);
+  const pnum = pageMatch ? parseInt(pageMatch[1]) : null;
+
+  // PDF.jsでそのページのテキストから写真番号を抽出
+  let pagePhotoNos = null;
+  if (pnum && state.pdfDoc) {
+    try {
+      const page = await state.pdfDoc.getPage(pnum);
+      const tc   = await page.getTextContent();
+      const text = tc.items.map(i => i.str).join(' ');
+      const matches = [...text.matchAll(/写真番号\s*(\d+)/g)];
+      if (matches.length > 0) {
+        pagePhotoNos = new Set(matches.map(m => parseInt(m[1])));
+      }
+    } catch(e) {}
+  }
+
+  // 表示するスロットを絞り込み
+  const targetSlots = pagePhotoNos
+    ? damageSlots.filter(s => pagePhotoNos.has(s.prevNo))
+    : damageSlots; // テキスト抽出できない場合は全表示
+
+  if (targetSlots.length === 0) return;
 
   panel.style.display = 'block';
   btns.innerHTML = '';
 
   // 径間ごとにグループ化
-  const spans = [...new Set(damageSlots.map(s => s.span || 1))].sort((a,b) => a-b);
-
+  const spans = [...new Set(targetSlots.map(s => s.span || 1))].sort((a,b) => a-b);
   spans.forEach(span => {
-    const spanSlots = damageSlots.filter(s => (s.span || 1) === span);
+    const spanSlots = targetSlots.filter(s => (s.span || 1) === span);
     if (spans.length > 1) {
       const label = document.createElement('div');
       label.style.cssText = 'width:100%;font-size:10px;color:var(--text2);margin-top:4px;';
@@ -1609,7 +1634,6 @@ function renderPhotoLinkButtons(drawKey) {
     }
     spanSlots.forEach(slot => {
       const btn = document.createElement('button');
-      // 今回写真が撮影済みかどうかで色を変える
       const hasPhoto = !!state.photos?.[slot.key];
       btn.style.cssText = `
         background:${hasPhoto ? 'var(--green)' : 'var(--surface)'};
@@ -1829,20 +1853,23 @@ function setupPinchZoom(key) {
       originY = (midY - wRect.top  - panY) / scale;
       e.stopPropagation();
       e.preventDefault();
-    } else if (e.touches.length === 1 && scale > 1.05) {
-      // ズーム中は1本指でパン
-      isPanning  = true;
-      isPinching = false;
-      lastTouchX = e.touches[0].clientX;
-      lastTouchY = e.touches[0].clientY;
-      lastPanX   = panX;
-      lastPanY   = panY;
-      if (drawState[key]) drawState[key].drawing = false;
-      e.stopPropagation();
-      e.preventDefault();
-    } else {
-      isPinching = false;
-      isPanning  = false;
+    } else if (e.touches.length === 1) {
+      // スクロールツール選択中 または ズーム中は1本指でパン
+      const isScrollTool = drawState[key]?.tool === 'scroll';
+      if (isScrollTool || scale > 1.05) {
+        isPanning  = true;
+        isPinching = false;
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        lastPanX   = panX;
+        lastPanY   = panY;
+        if (drawState[key]) drawState[key].drawing = false;
+        e.stopPropagation();
+        e.preventDefault();
+      } else {
+        isPinching = false;
+        isPanning  = false;
+      }
     }
   }, { passive: false });
 
@@ -2085,8 +2112,8 @@ function setupDrawEvents(canvas, svg, key) {
   // ===== ポインタ開始 =====
   const onStart = (e) => {
     if (e.touches && e.touches.length >= 2) return;
-    // ズーム中（scale>1.05）は1本指をパンに渡して描画しない
-    if ((zoomScales[key] || 1) > 1.05) return;
+    // スクロールツール または ズーム中は描画しない（パンに渡す）
+    if (drawState[key]?.tool === 'scroll' || (zoomScales[key] || 1) > 1.05) return;
     e.preventDefault();
     const ds = drawState[key];
     const pos = getPos(e);
@@ -2607,11 +2634,15 @@ function setTool(tool, key) {
   if (!ds) return;
   ds.tool = tool;
   ds.selectedId = null;
-  ['pen','line','arrow','rect','square','ellipse','select','eraser'].forEach(t => {
+  ['pen','line','arrow','rect','square','ellipse','select','eraser','scroll'].forEach(t => {
     document.getElementById(`tool-${t}-${key}`)?.classList.toggle('active', t === tool);
   });
   const canvas = document.getElementById(`drawcanvas-${key}`);
-  if (canvas) canvas.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+  if (canvas) {
+    canvas.style.cursor = tool === 'select' ? 'default'
+                        : tool === 'scroll' ? 'grab'
+                        : 'crosshair';
+  }
   renderSVGObjects(key);
 }
 
