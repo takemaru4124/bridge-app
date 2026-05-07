@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.0</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.1</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1772,7 +1772,7 @@ function setupToolbarDrag(key) {
   window.addEventListener('mouseup',    onEnd);
 }
 
-// ===== ピンチズーム =====
+// ===== ピンチズーム + スクロール =====
 function setupPinchZoom(key) {
   const wrapper = document.getElementById(`zoom-wrapper-${key}`);
   const inner   = document.getElementById(`zoom-inner-${key}`);
@@ -1783,6 +1783,11 @@ function setupPinchZoom(key) {
   let initDist = 0;
   let isPinching = false;
   let originX = 0, originY = 0;
+  // パン（スクロール）用
+  let panX = 0, panY = 0;
+  let lastPanX = 0, lastPanY = 0;
+  let lastTouchX = 0, lastTouchY = 0;
+  let isPanning = false;
 
   const getDist = (t) => {
     const dx = t[0].clientX - t[1].clientX;
@@ -1790,46 +1795,88 @@ function setupPinchZoom(key) {
     return Math.sqrt(dx*dx + dy*dy);
   };
 
-  const applyTransform = () => {
-    inner.style.transformOrigin = `${originX}px ${originY}px`;
-    inner.style.transform = `scale(${scale})`;
+  const clampPan = () => {
+    // スケール1以下はパン不要
+    if (scale <= 1) { panX = 0; panY = 0; return; }
+    const wRect = wrapper.getBoundingClientRect();
+    const maxPanX = wRect.width  * (scale - 1) / scale;
+    const maxPanY = wRect.height * (scale - 1) / scale;
+    panX = Math.max(-maxPanX, Math.min(0, panX));
+    panY = Math.max(-maxPanY, Math.min(0, panY));
   };
 
-  // wrapperレベルで2本指のみ処理
-  // （1本指はcanvasのイベントに任せる）
+  const applyTransform = () => {
+    inner.style.transformOrigin = `${originX}px ${originY}px`;
+    inner.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  };
+
   wrapper.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 2) return;
-    isPinching = true;
-    initDist   = getDist(e.touches);
-    lastScale  = scale;
-    const wRect = wrapper.getBoundingClientRect();
-    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    originX = (midX - wRect.left) / scale;
-    originY = (midY - wRect.top)  / scale;
-    e.stopPropagation(); // canvasへの伝播を止める
-    e.preventDefault();
+    if (e.touches.length === 2) {
+      // 2本指：ピンチズーム開始
+      isPinching = true;
+      isPanning  = false;
+      initDist   = getDist(e.touches);
+      lastScale  = scale;
+      lastPanX   = panX;
+      lastPanY   = panY;
+      const wRect = wrapper.getBoundingClientRect();
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      originX = (midX - wRect.left - panX) / scale;
+      originY = (midY - wRect.top  - panY) / scale;
+      e.stopPropagation();
+      e.preventDefault();
+    } else if (e.touches.length === 1 && scale > 1) {
+      // 1本指かつズーム中：パン（スクロール）
+      isPanning  = true;
+      isPinching = false;
+      lastTouchX = e.touches[0].clientX;
+      lastTouchY = e.touches[0].clientY;
+      lastPanX   = panX;
+      lastPanY   = panY;
+      // 描画ツールのdrawingフラグをリセット
+      if (drawState[key]) drawState[key].drawing = false;
+      e.stopPropagation();
+      e.preventDefault();
+    } else {
+      isPinching = false;
+      isPanning  = false;
+    }
   }, { passive: false });
 
   wrapper.addEventListener('touchmove', (e) => {
-    if (!isPinching || e.touches.length !== 2) return;
-    const newDist = getDist(e.touches);
-    scale = Math.min(5, Math.max(1, lastScale * newDist / initDist));
-    applyTransform();
-    // drawingフラグをリセット（ピンチ中は描画しない）
-    if (drawState[key]) drawState[key].drawing = false;
-    e.stopPropagation();
-    e.preventDefault();
+    if (isPinching && e.touches.length === 2) {
+      // ピンチズーム
+      const newDist = getDist(e.touches);
+      scale = Math.min(5, Math.max(1, lastScale * newDist / initDist));
+      // ズームアウトでscale=1になったらパンもリセット
+      if (scale <= 1) { panX = 0; panY = 0; }
+      applyTransform();
+      if (drawState[key]) drawState[key].drawing = false;
+      e.stopPropagation();
+      e.preventDefault();
+    } else if (isPanning && e.touches.length === 1) {
+      // パン（スクロール）
+      const dx = e.touches[0].clientX - lastTouchX;
+      const dy = e.touches[0].clientY - lastTouchY;
+      panX = lastPanX + dx;
+      panY = lastPanY + dy;
+      clampPan();
+      applyTransform();
+      e.stopPropagation();
+      e.preventDefault();
+    }
   }, { passive: false });
 
   wrapper.addEventListener('touchend', (e) => {
-    if (e.touches.length < 2) {
-      isPinching = false;
+    if (e.touches.length < 2) isPinching = false;
+    if (e.touches.length === 0) {
+      isPanning = false;
       if (scale <= 1) {
-        scale = 1; originX = 0; originY = 0;
+        scale = 1; panX = 0; panY = 0;
+        originX = 0; originY = 0;
         applyTransform();
       }
-      // drawingフラグをリセット
       if (drawState[key]) drawState[key].drawing = false;
     }
   });
@@ -2039,6 +2086,12 @@ function setupDrawEvents(canvas, svg, key) {
   // ===== ポインタ開始 =====
   const onStart = (e) => {
     if (e.touches && e.touches.length >= 2) return;
+    // ズーム中（scale>1）は1本指もパン専用にして描画しない
+    const inner = document.getElementById(`zoom-inner-${key}`);
+    if (inner) {
+      const m = inner.style.transform.match(/scale\(([\d.]+)\)/);
+      if (m && parseFloat(m[1]) > 1.05) return;
+    }
     e.preventDefault();
     const ds = drawState[key];
     const pos = getPos(e);
