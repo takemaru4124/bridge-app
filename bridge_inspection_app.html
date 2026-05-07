@@ -601,7 +601,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.8</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.1.9</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -778,8 +778,7 @@ const MENU_SURVEY_BASE = [
   { key:'s6',  mapKey:'s6',  icon:'🔬', title:'その６　健全性の所見',     sub:'診断結果の確認',               tags:['view'],         type:'pdf-viewer',  pages:[] },
 ];
 const MENU_INSPECT_EXTRA = [
-  { key:'s9',  mapKey:'s9',  icon:'🗺️', title:'その９　損傷図',         sub:'フリーハンド書き込み可',    tags:['view','draw'],  type:'draw-viewer', pages:[] },
-  { key:'s10', mapKey:'s10', icon:'📷', title:'その１０　損傷写真',     sub:'NON/損傷写真の確認・撮影',  tags:['view','photo'], type:'photo-view',  pages:[], photoRequired:true },
+  { key:'s9s10', mapKey:'s9', icon:'🗺️', title:'その９・その１０　損傷図・損傷写真', sub:'損傷図の書き込み＋損傷写真の確認・撮影', tags:['view','draw','photo'], type:'combined-viewer', pages:[], photoRequired:true },
 ];
 
 const MENU_SURVEY  = MENU_SURVEY_BASE;
@@ -1180,6 +1179,10 @@ async function detectPageStructure(pdf) {
     if (pageMap[item.mapKey]) {
       item.pages = pageMap[item.mapKey];
     }
+    // combined-viewerの場合はs9のページを使用
+    if (item.type === 'combined-viewer' && pageMap['s9']) {
+      item.pages = pageMap['s9'];
+    }
   });
 
   await buildPhotoSlotsFromPDF(pdf, pageMap);
@@ -1318,10 +1321,166 @@ async function openSection(item) {
     await renderDrawViewer(item, tabs, content);
   } else if (item.type === 'photo-view') {
     renderPhotoViewer(item, tabs, content);
+  } else if (item.type === 'combined-viewer') {
+    await renderCombinedViewer(item, tabs, content);
   }
 }
 
-// ===== 書き込みビューア =====
+// ===== 統合ビューア（その9+その10）=====
+async function renderCombinedViewer(item, tabs, content) {
+  const s9Pages  = state.pageMap?.['s9']  || [];
+  const s10Item  = { key:'s10', mapKey:'s10', type:'photo-view',
+                     pages: state.pageMap?.['s10'] || [],
+                     photoRequired: true };
+
+  // タブを2つ作成：損傷図 / 損傷写真
+  const tabDraw  = document.createElement('div');
+  tabDraw.className  = 'viewer-tab active';
+  tabDraw.textContent = '🗺️ 損傷図';
+  const tabPhoto = document.createElement('div');
+  tabPhoto.className  = 'viewer-tab';
+  tabPhoto.textContent = '📷 損傷写真';
+  tabs.appendChild(tabDraw);
+  tabs.appendChild(tabPhoto);
+
+  // セクション：損傷図
+  const secDraw = document.createElement('div');
+  secDraw.className = 'viewer-section active';
+
+  // セクション：損傷写真
+  const secPhoto = document.createElement('div');
+  secPhoto.className = 'viewer-section';
+
+  content.appendChild(secDraw);
+  content.appendChild(secPhoto);
+
+  // タブ切り替え
+  tabDraw.onclick = () => {
+    tabDraw.classList.add('active');  tabPhoto.classList.remove('active');
+    secDraw.classList.add('active');  secPhoto.classList.remove('active');
+  };
+  tabPhoto.onclick = () => {
+    tabPhoto.classList.add('active'); tabDraw.classList.remove('active');
+    secPhoto.classList.add('active'); secDraw.classList.remove('active');
+    // 初回表示時にrenderPhotoViewerを実行
+    if (!secPhoto.dataset.rendered) {
+      secPhoto.dataset.rendered = '1';
+      renderPhotoViewer(s10Item,
+        { appendChild: () => {}, querySelectorAll: () => [] },
+        secPhoto);
+    }
+  };
+
+  // 損傷図を描画
+  if (s9Pages.length === 0) {
+    secDraw.innerHTML = '<div class="page-loading">損傷図のページが見つかりません</div>';
+  } else {
+    // ページタブ（複数ページある場合）
+    const innerTabs = document.createElement('div');
+    innerTabs.style.cssText = 'display:flex;overflow-x:auto;padding:4px 8px;gap:4px;border-bottom:1px solid var(--border);';
+    const innerSections = [];
+
+    for (let i = 0; i < s9Pages.length; i++) {
+      const p = s9Pages[i];
+
+      // ページタブ
+      if (s9Pages.length > 1) {
+        const ptab = document.createElement('button');
+        ptab.style.cssText = `background:${i===0?'var(--accent)':'var(--surface2)'};border:1px solid var(--border);color:${i===0?'#fff':'var(--text)'};border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;`;
+        ptab.textContent = `P${p}`;
+        ptab.onclick = () => {
+          innerTabs.querySelectorAll('button').forEach((b,bi) => {
+            b.style.background = bi===i ? 'var(--accent)' : 'var(--surface2)';
+            b.style.color = bi===i ? '#fff' : 'var(--text)';
+          });
+          innerSections.forEach((s,si) => s.style.display = si===i ? 'block' : 'none');
+        };
+        innerTabs.appendChild(ptab);
+      }
+
+      const psec = document.createElement('div');
+      psec.style.display = i===0 ? 'block' : 'none';
+      innerSections.push(psec);
+
+      const drawKey = `s9s10_p${p}`;
+
+      // ツールバー・キャンバス・写真ボタンパネル
+      psec.innerHTML = `
+        <div class="draw-toolbar" id="toolbar-${drawKey}">
+          <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
+            <span class="draw-toolbar-title">🖊️ 描画ツール</span>
+            <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
+          </div>
+          <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
+            <button class="draw-tool-btn active" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
+            <button class="draw-tool-btn"        id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
+            <button class="draw-tool-btn"        id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
+            <button class="draw-tool-btn"        id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
+            <button class="draw-tool-btn"        id="tool-square-${drawKey}"  onclick="setTool('square','${drawKey}')">■ 正方形</button>
+            <button class="draw-tool-btn"        id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
+            <button class="draw-tool-btn"        id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
+            <button class="draw-tool-btn eraser" id="tool-eraser-${drawKey}"  onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
+            <span class="draw-toolbar-sep"></span>
+            <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
+            <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
+            <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
+            <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
+            <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
+            <span class="draw-toolbar-sep"></span>
+            <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
+            <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
+            <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
+            <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
+            <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
+            <span style="font-size:10px;color:var(--text2)">mm</span>
+            <span class="draw-toolbar-sep"></span>
+            <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
+            <button class="size-btn active" id="pat-none-${drawKey}"  onclick="setPattern('none','${drawKey}',this)">なし</button>
+            <button class="size-btn"        id="pat-hatch-${drawKey}" onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
+            <button class="size-btn"        id="pat-diag-${drawKey}"  onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
+            <button class="size-btn"        id="pat-solid-${drawKey}" onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
+            <span class="draw-toolbar-sep"></span>
+            <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
+            <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
+            <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
+            <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
+            <span class="draw-toolbar-sep"></span>
+            <span style="font-size:10px;color:var(--text2);white-space:nowrap">回転(選択後):</span>
+            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)">◁◁-10°</button>
+            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)">◁-1°</button>
+            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)">+1°▷</button>
+            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',10)">+10°▷▷</button>
+            <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${p})">💾 保存</button>
+          </div>
+        </div>
+        <div class="draw-zoom-wrapper" id="zoom-wrapper-${drawKey}">
+          <div class="draw-zoom-inner" id="zoom-inner-${drawKey}">
+            <div class="draw-container" id="draw-container-${drawKey}">
+              <div class="page-loading" id="draw-loading-${drawKey}"><div class="loading-spinner"></div>読み込み中...</div>
+            </div>
+          </div>
+        </div>
+        <!-- 写真番号ボタンパネル（ツールバーに隠れないよう余白確保）-->
+        <div id="photo-link-panel-${drawKey}" style="display:none;padding:12px;background:var(--surface2);margin:8px 12px;border-radius:12px;border:1px solid var(--accent);">
+          <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;">📷 タップして損傷写真を確認・撮影</div>
+          <div id="photo-link-btns-${drawKey}" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        </div>
+        <div style="height:120px;"></div>
+      `;
+      secDraw.appendChild(psec);
+
+      const imgData = await getPageImage(p);
+      if (imgData) setupDrawCanvas(drawKey, imgData);
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 600);
+      setTimeout(() => {
+        setupToolbarDrag(drawKey);
+        setupPinchZoom(drawKey);
+      }, 300);
+    }
+
+    if (s9Pages.length > 1) secDraw.insertBefore(innerTabs, secDraw.firstChild);
+  }
+}
 async function renderDrawViewer(item, tabs, content) {
   // タブ
   item.pages.forEach((p, i) => {
