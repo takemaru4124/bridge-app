@@ -217,6 +217,8 @@
   .draw-zoom-wrapper {
     overflow: hidden; touch-action: none; position: relative;
     margin: 12px; border-radius: var(--radius); border: 1px solid var(--border);
+    /* 高さを画面の60%に固定してスクロール可能に */
+    max-height: 60vh;
   }
   .draw-zoom-inner { transform-origin: 0 0; position: relative; display: block; width: 100%; }
   .draw-container { position: relative; }
@@ -224,6 +226,32 @@
   .draw-canvas {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     touch-action: none; cursor: crosshair;
+  }
+
+  /* 写真番号パネル */
+  .photo-link-panel {
+    margin: 0 12px 12px;
+    padding: 12px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    border: 1px solid var(--accent);
+  }
+  .photo-link-panel-title {
+    font-size: 12px; font-weight: 700; color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .photo-link-btns {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    /* 横スクロール */
+    overflow-x: auto; flex-wrap: nowrap;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .photo-link-btns::-webkit-scrollbar {
+    height: 4px;
+  }
+  .photo-link-btns::-webkit-scrollbar-thumb {
+    background: var(--accent); border-radius: 2px;
   }
 
   /* ===== フローティングツールバー ===== */
@@ -601,7 +629,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.3</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.4</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1467,12 +1495,12 @@ async function renderCombinedViewer(item, tabs, content) {
             </div>
           </div>
         </div>
-        <!-- 写真番号ボタンパネル（ツールバーに隠れないよう余白確保）-->
-        <div id="photo-link-panel-${drawKey}" style="display:none;padding:12px;background:var(--surface2);margin:8px 12px;border-radius:12px;border:1px solid var(--accent);">
-          <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;">📷 タップして損傷写真を確認・撮影</div>
-          <div id="photo-link-btns-${drawKey}" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+        <!-- 写真番号パネル（ズームラッパーの外に配置）-->
+        <div id="photo-link-panel-${drawKey}" class="photo-link-panel" style="display:none;">
+          <div class="photo-link-panel-title">📷 タップして損傷写真を確認・撮影</div>
+          <div id="photo-link-btns-${drawKey}" class="photo-link-btns"></div>
         </div>
-        <div style="height:120px;"></div>
+        <div style="height:100px;"></div>
       `;
       secDraw.appendChild(psec);
 
@@ -1639,8 +1667,9 @@ async function renderPhotoLinkButtons(drawKey) {
         background:${hasPhoto ? 'var(--green)' : 'var(--surface)'};
         border:1px solid ${hasPhoto ? 'var(--green)' : 'var(--border)'};
         color:${hasPhoto ? '#fff' : 'var(--text)'};
-        border-radius:8px;padding:6px 10px;font-size:11px;
-        font-weight:700;cursor:pointer;white-space:nowrap;
+        border-radius:8px; padding:8px 12px; font-size:12px;
+        font-weight:700; cursor:pointer; white-space:nowrap;
+        flex-shrink:0;
       `;
       btn.textContent = `No.${slot.prevNo}`;
       btn.onclick = () => openPhotoPopup(slot.key);
