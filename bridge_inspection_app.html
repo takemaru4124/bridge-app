@@ -629,7 +629,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.5</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.6</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -1912,7 +1912,8 @@ function setupPinchZoom(key) {
     } else if (isPanning && e.touches.length === 1) {
       panX = lastPanX + (e.touches[0].clientX - lastTouchX);
       panY = lastPanY + (e.touches[0].clientY - lastTouchY);
-      if (scale > 1.01) clampPan();
+      // ズーム中のみ範囲制限（スクロールモードは自由に移動）
+      if (scale > 1.01 && drawState[key]?.tool !== 'scroll') clampPan();
       applyTransform();
       e.stopPropagation(); e.preventDefault();
     }
@@ -1922,7 +1923,11 @@ function setupPinchZoom(key) {
     if (e.touches.length < 2) isPinching = false;
     if (e.touches.length === 0) {
       isPanning = false;
-      if (scale <= 1.01) resetZoom();
+      // scale=1以下になっても位置はリセットしない（スクロール位置を保持）
+      if (scale < 1) {
+        scale = 1;
+        applyTransform();
+      }
       if (drawState[key]) drawState[key].drawing = false;
     }
   });
@@ -3274,6 +3279,13 @@ function showScreen(name) {
 }
 
 function goBack() {
+  // 写真ポップアップが開いている場合はまず閉じる（損傷図に戻る）
+  const popup = document.getElementById('photo-popup');
+  if (popup && popup.style.display === 'flex') {
+    closePhotoPopup();
+    return;
+  }
+
   if (currentScreen === 'viewer') {
     showScreen('menu');
     showMenuContent();
