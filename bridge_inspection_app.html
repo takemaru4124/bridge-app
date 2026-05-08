@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.2</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.3</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1514,55 +1514,7 @@ async function renderCombinedViewer(item, tabs, content) {
 
       // ツールバー・キャンバス・写真ボタンパネル
       psec.innerHTML = `
-        <div class="draw-toolbar" id="toolbar-${drawKey}">
-          <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
-            <span class="draw-toolbar-title">🖊️ 描画ツール</span>
-            <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
-          </div>
-          <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
-            <button class="draw-tool-btn" id="tool-scroll-${drawKey}" onclick="setTool('scroll','${drawKey}')">🖐 スクロール</button>
-            <span class="draw-toolbar-sep"></span>
-            <button class="draw-tool-btn active" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
-            <button class="draw-tool-btn"        id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
-            <button class="draw-tool-btn"        id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
-            <button class="draw-tool-btn"        id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
-            <button class="draw-tool-btn"        id="tool-square-${drawKey}"  onclick="setTool('square','${drawKey}')">■ 正方形</button>
-            <button class="draw-tool-btn"        id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
-            <button class="draw-tool-btn"        id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
-            <button class="draw-tool-btn eraser" id="tool-eraser-${drawKey}"  onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
-            <span class="draw-toolbar-sep"></span>
-            <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
-            <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
-            <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
-            <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
-            <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
-            <span class="draw-toolbar-sep"></span>
-            <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
-            <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
-            <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
-            <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
-            <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
-            <span style="font-size:10px;color:var(--text2)">mm</span>
-            <span class="draw-toolbar-sep"></span>
-            <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
-            <button class="size-btn active" id="pat-none-${drawKey}"  onclick="setPattern('none','${drawKey}',this)">なし</button>
-            <button class="size-btn"        id="pat-hatch-${drawKey}" onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
-            <button class="size-btn"        id="pat-diag-${drawKey}"  onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
-            <button class="size-btn"        id="pat-solid-${drawKey}" onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
-            <span class="draw-toolbar-sep"></span>
-            <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
-            <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
-            <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
-            <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
-            <span class="draw-toolbar-sep"></span>
-            <span style="font-size:10px;color:var(--text2);white-space:nowrap">回転(選択後):</span>
-            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)">◁◁-10°</button>
-            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)">◁-1°</button>
-            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)">+1°▷</button>
-            <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',10)">+10°▷▷</button>
-            <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${p})">💾 保存</button>
-          </div>
-        </div>
+        ${buildToolbarHTML(drawKey, p)}
         <div class="draw-zoom-wrapper" id="zoom-wrapper-${drawKey}">
           <div class="draw-zoom-inner" id="zoom-inner-${drawKey}">
             <div class="draw-container" id="draw-container-${drawKey}">
@@ -1570,7 +1522,6 @@ async function renderCombinedViewer(item, tabs, content) {
             </div>
           </div>
         </div>
-        <!-- 写真番号パネル（ズームラッパーの外に配置）-->
         <div id="photo-link-panel-${drawKey}" class="photo-link-panel" style="display:none;">
           <div class="photo-link-panel-title">📷 タップして損傷写真を確認・撮影</div>
           <div id="photo-link-btns-${drawKey}" class="photo-link-btns"></div>
@@ -1614,55 +1565,7 @@ async function renderDrawViewer(item, tabs, content) {
 
     // フローティングツールバー + ズームラッパー
     section.innerHTML = `
-      <div class="draw-toolbar" id="toolbar-${drawKey}">
-        <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
-          <span class="draw-toolbar-title">🖊️ 描画ツール</span>
-          <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
-        </div>
-        <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
-          <button class="draw-tool-btn active" id="tool-scroll-${drawKey}" onclick="setTool('scroll','${drawKey}')">🖐 スクロール</button>
-          <span class="draw-toolbar-sep"></span>
-          <button class="draw-tool-btn" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
-          <button class="draw-tool-btn"        id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
-          <button class="draw-tool-btn"        id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
-          <button class="draw-tool-btn"        id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
-          <button class="draw-tool-btn"        id="tool-square-${drawKey}"  onclick="setTool('square','${drawKey}')">■ 正方形</button>
-          <button class="draw-tool-btn"        id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
-          <button class="draw-tool-btn"        id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
-          <button class="draw-tool-btn eraser" id="tool-eraser-${drawKey}"  onclick="setTool('eraser','${drawKey}')">🧹 消しゴム</button>
-          <span class="draw-toolbar-sep"></span>
-          <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
-          <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
-          <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
-          <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
-          <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
-          <span class="draw-toolbar-sep"></span>
-          <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
-          <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
-          <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
-          <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
-          <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
-          <span style="font-size:10px;color:var(--text2)">mm</span>
-          <span class="draw-toolbar-sep"></span>
-          <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
-          <button class="size-btn active" id="pat-none-${drawKey}"  onclick="setPattern('none','${drawKey}',this)">なし</button>
-          <button class="size-btn"        id="pat-hatch-${drawKey}" onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
-          <button class="size-btn"        id="pat-diag-${drawKey}"  onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
-          <button class="size-btn"        id="pat-solid-${drawKey}" onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
-          <span class="draw-toolbar-sep"></span>
-          <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
-          <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
-          <button class="draw-tool-btn" onclick="copySelected('${drawKey}')">📋 コピー</button>
-          <button class="draw-tool-btn" onclick="pasteObj('${drawKey}')">📌 貼付</button>
-          <span class="draw-toolbar-sep"></span>
-          <span style="font-size:10px;color:var(--text2);white-space:nowrap">回転(選択後):</span>
-          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-10)">◁◁-10°</button>
-          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',-1)">◁-1°</button>
-          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',1)">+1°▷</button>
-          <button class="draw-tool-btn" onclick="rotateSelected('${drawKey}',10)">+10°▷▷</button>
-          <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${p})">💾 保存</button>
-        </div>
-      </div>
+      ${buildToolbarHTML(drawKey, p)}
       <div class="draw-zoom-wrapper" id="zoom-wrapper-${drawKey}">
         <div class="draw-zoom-inner" id="zoom-inner-${drawKey}">
           <div class="draw-container" id="draw-container-${drawKey}">
@@ -1670,10 +1573,7 @@ async function renderDrawViewer(item, tabs, content) {
           </div>
         </div>
       </div>
-      <div id="photo-link-panel-${drawKey}" style="display:none;padding:12px;background:var(--surface2);margin:8px 12px 80px;border-radius:12px;border:1px solid var(--border);">
-        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;">📷 損傷写真を確認・撮影</div>
-        <div id="photo-link-btns-${drawKey}" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
-      </div>
+      <div style="height:100px;"></div>
     `;
     content.appendChild(section);
 
@@ -1906,6 +1806,51 @@ function popupNav(dir) {
   updatePopup(slots[_popupSlotIndex]);
 }
 
+// ===== 共通ツールバーHTML生成 =====
+function buildToolbarHTML(drawKey, pageNum) {
+  return `
+    <div class="draw-toolbar" id="toolbar-${drawKey}">
+      <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
+        <span class="draw-toolbar-title">🖊️ 描画ツール</span>
+        <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
+      </div>
+      <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
+        <button class="draw-tool-btn active" id="tool-scroll-${drawKey}"  onclick="setTool('scroll','${drawKey}')">🖐 移動</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="draw-tool-btn" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
+        <button class="draw-tool-btn" id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
+        <button class="draw-tool-btn" id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
+        <button class="draw-tool-btn" id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
+        <button class="draw-tool-btn" id="tool-square-${drawKey}"  onclick="setTool('square','${drawKey}')">■ 正方形</button>
+        <button class="draw-tool-btn" id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
+        <button class="draw-tool-btn" id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
+        <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
+        <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
+        <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
+        <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
+        <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
+        <span style="font-size:10px;color:var(--text2)">mm</span>
+        <span class="draw-toolbar-sep"></span>
+        <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
+        <button class="size-btn active" id="pat-none-${drawKey}"  onclick="setPattern('none','${drawKey}',this)">なし</button>
+        <button class="size-btn"        id="pat-hatch-${drawKey}" onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
+        <button class="size-btn"        id="pat-diag-${drawKey}"  onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
+        <button class="size-btn"        id="pat-solid-${drawKey}" onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
+        <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
+        <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${pageNum})">💾 保存</button>
+      </div>
+    </div>`;
+}
+
 // ===== ツールバー最小化 =====
 function toggleToolbar(key) {
   const body   = document.getElementById(`toolbar-body-${key}`);
@@ -2124,30 +2069,37 @@ function startRotateHandle(e, key) {
   const container = document.getElementById(`draw-container-${key}`);
   const rect = container.getBoundingClientRect();
 
-  // オブジェクト中心座標（正規化→px）
+  // オブジェクト中心座標（正規化→画面px）
   const cx = (obj.x1 + obj.x2) / 2 * rect.width  + rect.left;
   const cy = (obj.y1 + obj.y2) / 2 * rect.height + rect.top;
 
-  const getAngle = (clientX, clientY) => {
-    return Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI;
-  };
+  const getAngle = (clientX, clientY) =>
+    Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI;
 
   const src0 = e.touches ? e.touches[0] : e;
-  let startAngle = getAngle(src0.clientX, src0.clientY);
-  let startRot   = obj.rotation || 0;
+  let prevAngle = getAngle(src0.clientX, src0.clientY);
 
   const onMove = (ev) => {
+    ev.preventDefault();
     const src = ev.touches ? ev.touches[0] : ev;
     const angle = getAngle(src.clientX, src.clientY);
-    obj.rotation = startRot + (angle - startAngle);
+    // 前回との差分で回転（なめらか）
+    let delta = angle - prevAngle;
+    // -180〜180に正規化
+    if (delta > 180)  delta -= 360;
+    if (delta < -180) delta += 360;
+    obj.rotation = ((obj.rotation || 0) + delta + 360) % 360;
+    prevAngle = angle;
     renderSVGObjects(key);
   };
+
   const onEnd = () => {
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend',  onEnd);
     window.removeEventListener('mousemove', onMove);
     window.removeEventListener('mouseup',   onEnd);
   };
+
   window.addEventListener('touchmove', onMove, { passive: false });
   window.addEventListener('touchend',  onEnd);
   window.addEventListener('mousemove', onMove);
@@ -2290,15 +2242,20 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'select') {
       const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
       if (hit) {
-        ds.selectedId = hit.id;
-        ds.drawing = true;
+        // ヒット時：選択してドラッグ移動モードへ
+        ds.selectedId  = hit.id;
+        ds.selectedIds = [hit.id];
+        ds.drawing     = true;
+        ds.isRangeSelect = false;
         ds.startX = pos.nx; ds.startY = pos.ny;
+        ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       } else {
-        // 範囲選択開始
-        ds.selectedId = null;
-        ds.drawing = true;
+        // 空白タップ：範囲選択開始
+        ds.selectedId    = null;
+        ds.drawing       = true;
         ds.isRangeSelect = true;
         ds.startX = pos.nx; ds.startY = pos.ny;
+        ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       }
       renderSVGObjects(key);
       return;
@@ -2516,34 +2473,35 @@ function setupDrawEvents(canvas, svg, key) {
     }
   });
 
-  // ===== 長押しでコピー・貼り付け =====
+  // ===== 長押しでコピー・貼り付け（選択ツール専用）=====
   let longPressTimer = null;
   const onLongPressStart = (e) => {
-    if (drawState[key]?.tool !== 'select') return;
+    const ds = drawState[key];
+    if (ds?.tool !== 'select') return;
     longPressTimer = setTimeout(() => {
-      const ds = drawState[key];
-      if (!ds) return;
-      if (ds.selectedId) {
-        // 選択中オブジェクトをコピー
-        const obj = ds.objects.find(o => o.id === ds.selectedId);
+      longPressTimer = null;
+      const ds2 = drawState[key];
+      if (!ds2) return;
+      if (ds2.selectedId) {
+        // 選択中 → コピー
+        const obj = ds2.objects.find(o => o.id === ds2.selectedId);
         if (obj) {
           globalClipboard = {...obj};
-          ds.clipboard     = {...obj};
-          showToast('📋 コピーしました（長押しで貼り付け）', 'success');
+          ds2.clipboard   = {...obj};
+          showToast('📋 コピーしました！長押しで貼り付け', 'success');
         }
-      } else if (globalClipboard || ds.clipboard) {
-        // 貼り付け
+      } else if (globalClipboard || ds2.clipboard) {
+        // 選択なし → 貼り付け
         pasteObj(key);
       }
-    }, 600);
+    }, 700);
   };
   const onLongPressEnd = () => {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   };
   canvas.addEventListener('touchstart', onLongPressStart, { passive: true });
-  canvas.addEventListener('touchend',   onLongPressEnd);
-  canvas.addEventListener('touchmove',  onLongPressEnd, { passive: true });
+  canvas.addEventListener('touchend',   onLongPressEnd,   { passive: true });
+  canvas.addEventListener('touchmove',  onLongPressEnd,   { passive: true });
 
   canvas.addEventListener('mousedown',  onStart);
   canvas.addEventListener('mousemove',  onMove);
