@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.9</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.0</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3951,27 +3951,67 @@ function deletePhoto(slotKey, sectionKey) {
 async function downloadAll() {
   const photoKeys = Object.keys(state.photos);
 
-  showToast('💾 描画データを収集中...', '');
+  showToast('📦 データを収集中...', '');
 
-  // downloadAll前に全drawStateを自動保存
-  for (const key of Object.keys(drawState)) {
-    const ds = drawState[key];
+  // 全drawStateからZIP用の合成画像を生成（DOM非依存）
+  const drawEntries = []; // { key, pnum, dataURL }
+
+  for (const [key, ds] of Object.entries(drawState)) {
     if (!ds) continue;
-    if ((ds.objects && ds.objects.length > 0) || ds.savedPenData) {
-      // まだstate.drawingsに保存されていない場合は自動保存
-      if (!state.drawings[key]) {
-        const canvas = document.getElementById(`drawcanvas-${key}`);
-        if (canvas) {
-          try { await saveDraw(key, null); } catch(e) {}
-          await new Promise(r => setTimeout(r, 100));
-        }
-      }
+    const hasData = (ds.objects && ds.objects.length > 0) || ds.savedPenData;
+    if (!hasData) continue;
+
+    const m    = key.match(/p(\d+)$/);
+    const pnum = m ? parseInt(m[1]) : null;
+
+    // PDFページを高解像度で取得
+    let pdfPageCanvas = null;
+    if (pnum && state.pdfDoc) {
+      try {
+        const page = await state.pdfDoc.getPage(pnum);
+        const vp   = page.getViewport({ scale: 2.0 });
+        pdfPageCanvas = document.createElement('canvas');
+        pdfPageCanvas.width  = vp.width;
+        pdfPageCanvas.height = vp.height;
+        await page.render({
+          canvasContext: pdfPageCanvas.getContext('2d'),
+          viewport: vp
+        }).promise;
+      } catch(e) { pdfPageCanvas = null; }
     }
+
+    // 合成キャンバス
+    const W = pdfPageCanvas?.width  || 1200;
+    const H = pdfPageCanvas?.height || 1600;
+    const cv  = document.createElement('canvas');
+    cv.width  = W; cv.height = H;
+    const ctx = cv.getContext('2d');
+
+    // 1. PDFページを描画
+    if (pdfPageCanvas) {
+      ctx.drawImage(pdfPageCanvas, 0, 0);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // 2. ペンデータを重ねる
+    if (ds.savedPenData) {
+      try {
+        const penImg = await loadImage(ds.savedPenData);
+        ctx.drawImage(penImg, 0, 0, W, H);
+      } catch(e) {}
+    }
+
+    // 3. SVGオブジェクトをCanvasに直接描画（DOM上のSVG要素に依存しない）
+    if (ds.objects && ds.objects.length > 0) {
+      await drawObjectsToCanvas(ctx, ds.objects, W, H);
+    }
+
+    drawEntries.push({ key, pnum, dataURL: cv.toDataURL('image/jpeg', 0.92) });
   }
 
-  const drawKeys = Object.keys(state.drawings);
-
-  if (drawKeys.length === 0 && photoKeys.length === 0) {
+  if (drawEntries.length === 0 && photoKeys.length === 0) {
     showToast('保存できるデータがありません', 'error');
     return;
   }
@@ -3981,62 +4021,22 @@ async function downloadAll() {
   try {
     const zip = new JSZip();
 
-    // フォルダ定義（その2・その4・その9をそれぞれ分ける）
-    const folders = {
-      s2: zip.folder('その２_一般図'),
-      s4: zip.folder('その４_部材番号図'),
-      s9: zip.folder('その９_損傷図'),
-      other: zip.folder('その他_書き込み図面'),
-    };
-
     // ① 書き込み済み図面（種別ごとに振り分け）
-    for (const key of drawKeys) {
-      const drawingDataURL = state.drawings[key];
-      if (!drawingDataURL) continue;
-
-      const m    = key.match(/p(\d+)$/);
-      const pnum = m ? parseInt(m[1]) : null;
-
-      // 元PDFページを取得
-      let baseDataURL = null;
-      if (pnum && state.pdfDoc) {
-        try {
-          const page = await state.pdfDoc.getPage(pnum);
-          const vp   = page.getViewport({ scale: 2.0 });
-          const cv   = document.createElement('canvas');
-          cv.width = vp.width; cv.height = vp.height;
-          await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-          baseDataURL = cv.toDataURL('image/jpeg', 0.92);
-        } catch(e) {}
+    if (drawEntries.length > 0) {
+      for (const entry of drawEntries) {
+        const { key, pnum, dataURL } = entry;
+        const label  = pnum ? `P${String(pnum).padStart(2,'0')}` : key;
+        const b64    = dataURL.split(',')[1];
+        let folderName = 'その他_書き込み図面';
+        if (key.startsWith('s2'))                           folderName = 'その２_一般図';
+        else if (key.startsWith('s4'))                      folderName = 'その４_部材番号図';
+        else if (key.startsWith('s9') || key.startsWith('s9s10')) folderName = 'その９_損傷図';
+        zip.folder(folderName).file(`${label}_書込済み.jpg`, b64, { base64: true });
       }
-
-      // 合成
-      const cv  = document.createElement('canvas');
-      const ctx = cv.getContext('2d');
-      const baseImg = await loadImage(baseDataURL || drawingDataURL);
-      cv.width = baseImg.width; cv.height = baseImg.height;
-      if (baseDataURL) { ctx.drawImage(baseImg, 0, 0); }
-      else { ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cv.width,cv.height); }
-      const drawImg = await loadImage(drawingDataURL);
-      ctx.drawImage(drawImg, 0, 0, cv.width, cv.height);
-
-      const b64   = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
-      const label = pnum ? `P${String(pnum).padStart(2,'0')}` : key;
-
-      // キーのプレフィックスでフォルダを振り分け
-      let folder = folders.other;
-      if (key.startsWith('s2'))     folder = folders.s2;
-      else if (key.startsWith('s4')) folder = folders.s4;
-      else if (key.startsWith('s9') || key.startsWith('s9s10')) folder = folders.s9;
-
-      folder.file(`${label}_書込済み.jpg`, b64, { base64: true });
     }
 
     // ② 現地状況写真（その3）
-    const surveyPhotos = photoKeys.filter(k => {
-      const slot = SURVEY_PHOTO_SLOTS.find(s => s.key === k);
-      return !!slot;
-    });
+    const surveyPhotos = photoKeys.filter(k => SURVEY_PHOTO_SLOTS.find(s => s.key === k));
     if (surveyPhotos.length > 0) {
       const f3 = zip.folder('その３_現地状況写真');
       for (const key of surveyPhotos) {
@@ -4051,13 +4051,10 @@ async function downloadAll() {
     }
 
     // ③ 損傷写真（その10）
-    const damagePhotos = photoKeys.filter(k => {
-      const slot = DAMAGE_PHOTO_SLOTS.find(s => s.key === k);
-      return !!slot;
-    });
+    const damagePhotos = photoKeys.filter(k => DAMAGE_PHOTO_SLOTS.find(s => s.key === k));
     if (damagePhotos.length > 0) {
-      const f10damage = zip.folder('その１０_損傷写真/損傷');
-      const f10non    = zip.folder('その１０_損傷写真/NON');
+      const f10d = zip.folder('その１０_損傷写真/損傷');
+      const f10n = zip.folder('その１０_損傷写真/NON');
       for (const key of damagePhotos) {
         const photo   = state.photos[key];
         const dataURL = typeof photo === 'string' ? photo : photo?.dataURL;
@@ -4065,12 +4062,10 @@ async function downloadAll() {
         const slot  = DAMAGE_PHOTO_SLOTS.find(s => s.key === key);
         const label = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
         const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
-        const f     = slot?.isNON ? f10non : f10damage;
-        f.file(`${label}.${ext}`, dataURL.split(',')[1], { base64: true });
+        (slot?.isNON ? f10n : f10d).file(`${label}.${ext}`, dataURL.split(',')[1], { base64: true });
       }
     }
 
-    // ZIP生成＆ダウンロード
     const blob = await zip.generateAsync({ type: 'blob' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -4081,12 +4076,108 @@ async function downloadAll() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 3000);
 
-    const total = drawKeys.length + photoKeys.length;
+    const total = drawEntries.length + photoKeys.length;
     showToast(`✅ ${total}ファイルをZIPで保存しました`, 'success');
 
   } catch(err) {
     console.error(err);
     showToast('❌ 保存に失敗しました', 'error');
+  }
+}
+
+// SVGオブジェクトをCanvasに直接描画（DOM非依存）
+async function drawObjectsToCanvas(ctx, objects, W, H) {
+  const mmToPxLocal = (mm) => mm * (W / 210); // A4幅基準
+
+  for (const obj of objects) {
+    const x1 = obj.x1 * W, y1 = obj.y1 * H;
+    const x2 = obj.x2 * W, y2 = obj.y2 * H;
+    const sw = mmToPxLocal(obj.sizeMM || 0.5);
+    const rot = obj.rotation || 0;
+
+    ctx.save();
+    // 回転
+    if (rot !== 0) {
+      const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(rot * Math.PI / 180);
+      ctx.translate(-cx, -cy);
+    }
+
+    ctx.strokeStyle = obj.color || '#ef4444';
+    ctx.lineWidth   = sw;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+
+    if (obj.type === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+    } else if (obj.type === 'arrow') {
+      // 引出線（矢印付き）
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      // 矢印ヘッド
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const ah = sw * 4;
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - ah * Math.cos(angle - 0.4), y2 - ah * Math.sin(angle - 0.4));
+      ctx.lineTo(x2 - ah * Math.cos(angle + 0.4), y2 - ah * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fillStyle = obj.color || '#ef4444';
+      ctx.fill();
+
+    } else if (obj.type === 'rect') {
+      const rx = Math.min(x1,x2), ry = Math.min(y1,y2);
+      const rw = Math.abs(x2-x1), rh = Math.abs(y2-y1);
+      if (obj.pattern === 'solid') {
+        ctx.fillStyle = obj.color || '#ef4444';
+        ctx.fillRect(rx, ry, rw, rh);
+      } else if (obj.pattern === 'hatch' || obj.pattern === 'diag') {
+        ctx.strokeRect(rx, ry, rw, rh);
+        // ハッチング
+        const step = sw * 6;
+        ctx.save();
+        ctx.rect(rx, ry, rw, rh);
+        ctx.clip();
+        ctx.beginPath();
+        const d = obj.pattern === 'hatch' ? rw + rh : rw + rh;
+        for (let i = -d; i < d; i += step) {
+          if (obj.pattern === 'hatch') {
+            ctx.moveTo(rx + i, ry);
+            ctx.lineTo(rx + i + rh, ry + rh);
+            ctx.moveTo(rx + i, ry + rh);
+            ctx.lineTo(rx + i + rh, ry);
+          } else {
+            ctx.moveTo(rx + i, ry);
+            ctx.lineTo(rx + i + rh, ry + rh);
+          }
+        }
+        ctx.stroke();
+        ctx.restore();
+      } else {
+        ctx.strokeRect(rx, ry, rw, rh);
+      }
+
+    } else if (obj.type === 'ellipse') {
+      const cx = (x1+x2)/2, cy = (y1+y2)/2;
+      const rx = Math.abs(x2-x1)/2, ry2 = Math.abs(y2-y1)/2;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry2, 0, 0, Math.PI*2);
+      if (obj.pattern === 'solid') {
+        ctx.fillStyle = obj.color || '#ef4444';
+        ctx.fill();
+      } else {
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
   }
 }
 
