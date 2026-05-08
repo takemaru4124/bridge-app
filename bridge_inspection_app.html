@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.8</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.9</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2220,7 +2220,6 @@ function setupDrawCanvas(key, imgData) {
     // キャンバスリサイズ（ズーム前の自然サイズを基準に）
     const resizeCanvas = () => {
       const inner = document.getElementById(`zoom-inner-${key}`);
-      // ズーム中（transform scale）は無視して自然サイズを取得
       const prevTransform = inner ? inner.style.transform : '';
       if (inner) inner.style.transform = 'none';
 
@@ -2231,11 +2230,13 @@ function setupDrawCanvas(key, imgData) {
 
       if (inner) inner.style.transform = prevTransform;
 
-      if (drawState[key]?.savedPenData) {
+      // savedPenDataを優先、なければstate.drawingsから復元
+      const penData = drawState[key]?.savedPenData || state.drawings[key];
+      if (penData) {
         const ctx = canvas.getContext('2d');
         const s = new Image();
         s.onload = () => { ctx.drawImage(s, 0, 0, canvas.width, canvas.height); };
-        s.src = drawState[key].savedPenData;
+        s.src = penData;
       }
       renderSVGObjects(key);
     };
@@ -3032,6 +3033,15 @@ async function downloadDrawKey(key, pageNum) {
 async function saveWorkData() {
   showToast('💾 保存中...', '');
   try {
+    // 全キャンバスのペンデータを収集
+    for (const key of Object.keys(drawState)) {
+      const ds = drawState[key];
+      if (!ds) continue;
+      const canvas = document.getElementById(`drawcanvas-${key}`);
+      if (canvas && canvas.width > 0) {
+        try { ds.savedPenData = canvas.toDataURL('image/png'); } catch(e) {}
+      }
+    }
     const drawStateExport = {};
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
@@ -3939,8 +3949,27 @@ function deletePhoto(slotKey, sectionKey) {
 
 // ===== ダウンロード =====
 async function downloadAll() {
-  const drawKeys  = Object.keys(state.drawings);
   const photoKeys = Object.keys(state.photos);
+
+  showToast('💾 描画データを収集中...', '');
+
+  // downloadAll前に全drawStateを自動保存
+  for (const key of Object.keys(drawState)) {
+    const ds = drawState[key];
+    if (!ds) continue;
+    if ((ds.objects && ds.objects.length > 0) || ds.savedPenData) {
+      // まだstate.drawingsに保存されていない場合は自動保存
+      if (!state.drawings[key]) {
+        const canvas = document.getElementById(`drawcanvas-${key}`);
+        if (canvas) {
+          try { await saveDraw(key, null); } catch(e) {}
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+    }
+  }
+
+  const drawKeys = Object.keys(state.drawings);
 
   if (drawKeys.length === 0 && photoKeys.length === 0) {
     showToast('保存できるデータがありません', 'error');
@@ -4162,8 +4191,8 @@ function showScreen(name) {
   currentScreen = name;
 }
 
-function goBack() {
-  // 写真ポップアップが開いている場合はまず閉じる（損傷図に戻る）
+async function goBack() {
+  // 写真ポップアップが開いている場合はまず閉じる
   const popup = document.getElementById('photo-popup');
   if (popup && popup.style.display === 'flex') {
     closePhotoPopup();
@@ -4171,6 +4200,8 @@ function goBack() {
   }
 
   if (currentScreen === 'viewer') {
+    // ビューア→メニューに戻る前に描画を自動保存
+    autoSaveAllDrawings();
     showScreen('menu');
     showMenuContent();
     document.getElementById('topbar-title').textContent = '橋梁点検メニュー';
@@ -4178,6 +4209,21 @@ function goBack() {
     showScreen('home');
     document.getElementById('topbar').style.display = 'none';
     state.mode = null;
+  }
+}
+
+// 全描画キャンバスを自動保存
+function autoSaveAllDrawings() {
+  for (const key of Object.keys(drawState)) {
+    const ds = drawState[key];
+    if (!ds) continue;
+    // キャンバスのペンデータを保存
+    const canvas = document.getElementById(`drawcanvas-${key}`);
+    if (canvas && canvas.width > 0) {
+      try {
+        ds.savedPenData = canvas.toDataURL('image/png');
+      } catch(e) {}
+    }
   }
 }
 
