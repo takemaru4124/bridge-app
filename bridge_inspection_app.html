@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>橋梁点検アプリ</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --bg: #0f1117;
@@ -629,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.8</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.9</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -3283,18 +3284,16 @@ async function downloadDrawings() {
   const keys = Object.keys(state.drawings);
   if (keys.length === 0) { showToast('保存された書き込みがありません', 'error'); return; }
 
-  showToast('📄 PDFを生成中...', '');
+  showToast('📄 ZIP生成中...', '');
 
   try {
-    // 全ページを1つのPDFにまとめる
-    // A4サイズ(595×842pt)でCanvas合成→PDF
-    const pdfPages = [];
+    const zip = new JSZip();
+    const folder = zip.folder(`${state.pdfName}_書込済み図面`);
 
     for (const key of keys) {
       const drawingDataURL = state.drawings[key];
       if (!drawingDataURL) continue;
 
-      // keyからページ番号を取得（例: s9s10_p16 → 16）
       const m = key.match(/p(\d+)$/);
       const pnum = m ? parseInt(m[1]) : null;
 
@@ -3312,47 +3311,41 @@ async function downloadDrawings() {
         } catch(e) {}
       }
 
-      pdfPages.push({ key, pnum, baseDataURL, drawingDataURL });
-    }
-
-    if (pdfPages.length === 0) {
-      showToast('出力できるページがありません', 'error');
-      return;
-    }
-
-    // Canvas合成して各ページをダウンロード
-    for (const pg of pdfPages) {
+      // ベース + 書き込みを合成
       const cv  = document.createElement('canvas');
       const ctx = cv.getContext('2d');
-
-      // ベース画像のサイズを取得
-      const baseImg = await loadImage(pg.baseDataURL || pg.drawingDataURL);
+      const baseImg = await loadImage(baseDataURL || drawingDataURL);
       cv.width  = baseImg.width;
       cv.height = baseImg.height;
 
-      // 1. 元PDFページを描画
-      if (pg.baseDataURL) {
+      if (baseDataURL) {
         ctx.drawImage(baseImg, 0, 0);
       } else {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, cv.width, cv.height);
       }
 
-      // 2. 書き込みを重ねる
-      const drawImg = await loadImage(pg.drawingDataURL);
+      const drawImg = await loadImage(drawingDataURL);
       ctx.drawImage(drawImg, 0, 0, cv.width, cv.height);
 
-      // ダウンロード
-      const label = pg.pnum ? `P${pg.pnum}` : pg.key;
-      const a = document.createElement('a');
-      a.href = cv.toDataURL('image/jpeg', 0.92);
-      a.download = `${state.pdfName}_書込済み_${label}.jpg`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      // base64に変換してZIPに追加
+      const b64 = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
+      const label = pnum ? `P${String(pnum).padStart(2,'0')}` : key;
+      folder.file(`${label}_書込済み.jpg`, b64, { base64: true });
     }
 
-    showToast(`✅ ${pdfPages.length}ページの書き込み図面を保存しました`, 'success');
+    // ZIP生成してダウンロード
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${state.pdfName}_書込済み図面.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+
+    showToast(`✅ ${keys.length}ページをZIPで保存しました`, 'success');
 
   } catch(err) {
     console.error(err);
@@ -3371,33 +3364,61 @@ function loadImage(src) {
   });
 }
 
-function downloadPhotos() {
+async function downloadPhotos() {
   const keys = Object.keys(state.photos);
   if (keys.length === 0) { showToast('撮影写真がありません', 'error'); return; }
 
-  let count = 0;
-  keys.forEach(key => {
-    const photo = state.photos[key];
-    if (!photo) return;
+  showToast('📦 ZIP生成中...', '');
 
-    // photoはdataURL文字列またはオブジェクト
-    const dataURL = typeof photo === 'string' ? photo : photo.dataURL;
-    if (!dataURL) return;
+  try {
+    const zip = new JSZip();
+    const folder = zip.folder(`${state.pdfName}_撮影写真`);
 
-    // スロットから写真番号などのラベルを取得
-    const slot = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS].find(s => s.key === key);
-    const label = slot ? `No${slot.prevNo}` : key.replace(/[^a-zA-Z0-9_\-]/g, '_');
+    let count = 0;
+    for (const key of keys) {
+      const photo = state.photos[key];
+      if (!photo) continue;
 
-    const a = document.createElement('a');
-    a.href = dataURL;
-    a.download = `${state.pdfName}_${label}.jpg`;
+      const dataURL = typeof photo === 'string' ? photo : photo.dataURL;
+      if (!dataURL || !dataURL.startsWith('data:image')) continue;
+
+      // スロットから写真番号を取得
+      const slot = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS].find(s => s.key === key);
+      const label = slot
+        ? `No${String(slot.prevNo).padStart(3,'0')}`
+        : `photo_${count+1}`;
+
+      // base64部分のみ取得
+      const b64 = dataURL.split(',')[1];
+      if (!b64) continue;
+
+      // 拡張子判定
+      const ext = dataURL.includes('image/png') ? 'png' : 'jpg';
+      folder.file(`${label}.${ext}`, b64, { base64: true });
+      count++;
+    }
+
+    if (count === 0) {
+      showToast('保存できる写真がありません', 'error');
+      return;
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `${state.pdfName}_撮影写真.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    count++;
-  });
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
 
-  showToast(`✅ ${count}枚の写真を保存しました`, 'success');
+    showToast(`✅ ${count}枚をZIPで保存しました`, 'success');
+
+  } catch(err) {
+    console.error(err);
+    showToast('❌ 保存に失敗しました', 'error');
+  }
 }
 
 // ===== ナビゲーション =====
