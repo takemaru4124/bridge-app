@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.2.9</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.0</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -655,19 +655,11 @@
   <div class="download-section">
     <h3>💾 データ保存</h3>
     <div class="download-list">
-      <div class="download-item" onclick="downloadDrawings()">
-        <span class="download-item-icon">🖊️</span>
+      <div class="download-item" onclick="downloadAll()">
+        <span class="download-item-icon">📦</span>
         <div class="download-item-body">
-          <div class="download-item-title">書き込み済み図面</div>
-          <div class="download-item-sub">フリーハンド記録を含む画像</div>
-        </div>
-        <button class="download-btn">保存</button>
-      </div>
-      <div class="download-item" onclick="downloadPhotos()">
-        <span class="download-item-icon">📷</span>
-        <div class="download-item-body">
-          <div class="download-item-title">撮影写真一括保存</div>
-          <div class="download-item-sub">施設別に整理してダウンロード</div>
+          <div class="download-item-title">データ一括保存</div>
+          <div class="download-item-sub">書き込み図面＋撮影写真をZIPで保存</div>
         </div>
         <button class="download-btn">保存</button>
       </div>
@@ -2879,45 +2871,74 @@ function rotateToAngle(key, angleDeg) {
 }
 
 // ===== 保存 =====
-function saveDraw(key, pageNum) {
+async function saveDraw(key, pageNum) {
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (!canvas) return;
   const ds = drawState[key];
 
-  // フリーハンドを保存
   ds.savedPenData = canvas.toDataURL('image/png');
 
-  // フリーハンド + SVGオブジェクトを合成してdataURLに
-  const svgEl = document.getElementById(`drawsvg-${key}`);
-  const baseImg = canvas.previousElementSibling;
-  const W = canvas.offsetWidth, H = canvas.offsetHeight;
-  const dpr = window.devicePixelRatio;
+  const svgEl  = document.getElementById(`drawsvg-${key}`);
+  const baseEl = canvas.parentElement?.querySelector('.draw-base');
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+  const dpr = window.devicePixelRatio || 1;
 
   const exportCanvas = document.createElement('canvas');
   exportCanvas.width  = W * dpr;
   exportCanvas.height = H * dpr;
   const ctx = exportCanvas.getContext('2d');
+  ctx.scale(dpr, dpr);
 
-  // ベース画像を描画
-  const base = new Image();
-  base.onload = () => {
-    ctx.drawImage(base, 0, 0, exportCanvas.width, exportCanvas.height);
-    // フリーハンドを重ねる
-    ctx.drawImage(canvas, 0, 0);
-    // SVGをシリアライズして重ねる
-    const svgData = new XMLSerializer().serializeToString(svgEl);
-    const svgBlob = new Blob([svgData], { type:'image/svg+xml' });
-    const svgURL  = URL.createObjectURL(svgBlob);
-    const svgImg  = new Image();
-    svgImg.onload = () => {
-      ctx.drawImage(svgImg, 0, 0, exportCanvas.width, exportCanvas.height);
-      URL.revokeObjectURL(svgURL);
-      state.drawings[key] = exportCanvas.toDataURL('image/png');
-      showToast('💾 書き込みを保存しました','success');
-    };
-    svgImg.src = svgURL;
-  };
-  base.src = baseImg?.src || '';
+  try {
+    // 1. ベースPDFページを描画
+    if (baseEl && baseEl.src) {
+      const baseImg = await loadImage(baseEl.src);
+      ctx.drawImage(baseImg, 0, 0, W, H);
+    }
+
+    // 2. フリーハンドキャンバスを重ねる
+    ctx.drawImage(canvas, 0, 0, W, H);
+
+    // 3. SVGオブジェクトを直接Canvasに描画（確実な合成）
+    if (svgEl) {
+      // SVGにviewBoxとサイズを設定してから合成
+      const svgClone = svgEl.cloneNode(true);
+      svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      svgClone.setAttribute('width',  W);
+      svgClone.setAttribute('height', H);
+      svgClone.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      // pointer-eventsをリセット
+      svgClone.style.pointerEvents = 'none';
+
+      const svgStr  = new XMLSerializer().serializeToString(svgClone);
+      const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const svgURL  = URL.createObjectURL(svgBlob);
+
+      await new Promise((resolve) => {
+        const svgImg = new Image();
+        svgImg.onload = () => {
+          ctx.drawImage(svgImg, 0, 0, W, H);
+          URL.revokeObjectURL(svgURL);
+          resolve();
+        };
+        svgImg.onerror = () => {
+          URL.revokeObjectURL(svgURL);
+          resolve(); // エラーでも続行
+        };
+        svgImg.src = svgURL;
+      });
+    }
+
+    state.drawings[key] = exportCanvas.toDataURL('image/png');
+    showToast('💾 書き込みを保存しました', 'success');
+
+  } catch(err) {
+    console.error('saveDraw error:', err);
+    // フォールバック：キャンバスのみ保存
+    state.drawings[key] = exportCanvas.toDataURL('image/png');
+    showToast('💾 保存しました（一部省略）', 'success');
+  }
 }
 
 // clearDrawは削除（undoで代替）
@@ -3280,72 +3301,97 @@ function deletePhoto(slotKey, sectionKey) {
 }
 
 // ===== ダウンロード =====
-async function downloadDrawings() {
-  const keys = Object.keys(state.drawings);
-  if (keys.length === 0) { showToast('保存された書き込みがありません', 'error'); return; }
+async function downloadAll() {
+  const drawKeys  = Object.keys(state.drawings);
+  const photoKeys = Object.keys(state.photos);
 
-  showToast('📄 ZIP生成中...', '');
+  if (drawKeys.length === 0 && photoKeys.length === 0) {
+    showToast('保存できるデータがありません', 'error');
+    return;
+  }
+
+  showToast('📦 ZIP生成中...', '');
 
   try {
     const zip = new JSZip();
-    const folder = zip.folder(`${state.pdfName}_書込済み図面`);
 
-    for (const key of keys) {
-      const drawingDataURL = state.drawings[key];
-      if (!drawingDataURL) continue;
+    // ① 書き込み済み図面フォルダ
+    if (drawKeys.length > 0) {
+      const drawFolder = zip.folder('書き込み済み図面');
+      for (const key of drawKeys) {
+        const drawingDataURL = state.drawings[key];
+        if (!drawingDataURL) continue;
 
-      const m = key.match(/p(\d+)$/);
-      const pnum = m ? parseInt(m[1]) : null;
+        const m    = key.match(/p(\d+)$/);
+        const pnum = m ? parseInt(m[1]) : null;
 
-      // 元PDFページを高解像度で取得
-      let baseDataURL = null;
-      if (pnum && state.pdfDoc) {
-        try {
-          const page = await state.pdfDoc.getPage(pnum);
-          const vp   = page.getViewport({ scale: 2.0 });
-          const cv   = document.createElement('canvas');
-          cv.width   = vp.width;
-          cv.height  = vp.height;
-          await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-          baseDataURL = cv.toDataURL('image/jpeg', 0.92);
-        } catch(e) {}
+        // 元PDFページを高解像度で取得
+        let baseDataURL = null;
+        if (pnum && state.pdfDoc) {
+          try {
+            const page = await state.pdfDoc.getPage(pnum);
+            const vp   = page.getViewport({ scale: 2.0 });
+            const cv   = document.createElement('canvas');
+            cv.width   = vp.width;
+            cv.height  = vp.height;
+            await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+            baseDataURL = cv.toDataURL('image/jpeg', 0.92);
+          } catch(e) {}
+        }
+
+        // ベース + 書き込みを合成
+        const cv  = document.createElement('canvas');
+        const ctx = cv.getContext('2d');
+        const baseImg = await loadImage(baseDataURL || drawingDataURL);
+        cv.width  = baseImg.width;
+        cv.height = baseImg.height;
+        if (baseDataURL) {
+          ctx.drawImage(baseImg, 0, 0);
+        } else {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+        }
+        const drawImg = await loadImage(drawingDataURL);
+        ctx.drawImage(drawImg, 0, 0, cv.width, cv.height);
+
+        const b64   = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
+        const label = pnum ? `P${String(pnum).padStart(2,'0')}` : key;
+        drawFolder.file(`${label}_書込済み.jpg`, b64, { base64: true });
       }
-
-      // ベース + 書き込みを合成
-      const cv  = document.createElement('canvas');
-      const ctx = cv.getContext('2d');
-      const baseImg = await loadImage(baseDataURL || drawingDataURL);
-      cv.width  = baseImg.width;
-      cv.height = baseImg.height;
-
-      if (baseDataURL) {
-        ctx.drawImage(baseImg, 0, 0);
-      } else {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, cv.width, cv.height);
-      }
-
-      const drawImg = await loadImage(drawingDataURL);
-      ctx.drawImage(drawImg, 0, 0, cv.width, cv.height);
-
-      // base64に変換してZIPに追加
-      const b64 = cv.toDataURL('image/jpeg', 0.92).split(',')[1];
-      const label = pnum ? `P${String(pnum).padStart(2,'0')}` : key;
-      folder.file(`${label}_書込済み.jpg`, b64, { base64: true });
     }
 
-    // ZIP生成してダウンロード
+    // ② 撮影写真フォルダ
+    if (photoKeys.length > 0) {
+      const photoFolder = zip.folder('撮影写真');
+      let count = 0;
+      for (const key of photoKeys) {
+        const photo = state.photos[key];
+        if (!photo) continue;
+        const dataURL = typeof photo === 'string' ? photo : photo.dataURL;
+        if (!dataURL || !dataURL.startsWith('data:image')) continue;
+
+        const slot  = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS].find(s => s.key === key);
+        const label = slot
+          ? `No${String(slot.prevNo).padStart(3,'0')}`
+          : `photo_${++count}`;
+        const ext = dataURL.includes('image/png') ? 'png' : 'jpg';
+        photoFolder.file(`${label}.${ext}`, dataURL.split(',')[1], { base64: true });
+      }
+    }
+
+    // ZIP生成＆ダウンロード
     const blob = await zip.generateAsync({ type: 'blob' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;
-    a.download = `${state.pdfName}_書込済み図面.zip`;
+    a.download = `${state.pdfName}_点検データ.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 3000);
 
-    showToast(`✅ ${keys.length}ページをZIPで保存しました`, 'success');
+    const total = drawKeys.length + photoKeys.length;
+    showToast(`✅ ${total}ファイルをZIPで保存しました`, 'success');
 
   } catch(err) {
     console.error(err);
