@@ -630,7 +630,25 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.2</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.3</span> &nbsp;|&nbsp; 2025-04-27
+  </div>
+
+  <!-- データ引き継ぎボタン -->
+  <div style="padding: 0 20px 32px;">
+    <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+      <div style="padding:10px 14px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--text2);">
+        📥 データ引き継ぎ
+      </div>
+      <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="document.getElementById('import-file-home').click()">
+        <span style="font-size:28px;">📡</span>
+        <div style="flex:1;">
+          <div style="font-size:13px;font-weight:700;">他のiPadからデータを取り込む</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;">AirDropで受け取ったJSONファイルを選択</div>
+        </div>
+        <button style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">取り込み</button>
+      </div>
+      <input type="file" id="import-file-home" accept=".json" style="display:none" onchange="importData(this)">
+    </div>
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -3014,11 +3032,11 @@ function importData(input) {
       );
       if (!ok) return;
 
-      // 写真を統合
+      // 写真・書き込みを統合
       Object.assign(state.photos,   data.photos   || {});
       Object.assign(state.drawings, data.drawings  || {});
 
-      // 書き込みデータ（drawState）を復元
+      // drawStateを復元
       if (data.drawState) {
         for (const [key, ds] of Object.entries(data.drawState)) {
           if (!drawState[key]) {
@@ -3028,21 +3046,16 @@ function importData(input) {
               drawing: false, startX: 0, startY: 0, savedPenData: null
             };
           }
-          // オブジェクト（図形）を統合
           if (ds.objects && ds.objects.length > 0) {
-            // IDが重複しないように新しいIDを割り当て
             const newObjs = ds.objects.map(obj => ({
               ...obj, id: Date.now() + Math.random()
             }));
             drawState[key].objects.push(...newObjs);
           }
-          // ペンデータを復元（既存がなければ）
           if (ds.savedPenData && !drawState[key].savedPenData) {
             drawState[key].savedPenData = ds.savedPenData;
           }
-          // SVGオブジェクトを再描画
           renderSVGObjects(key);
-          // ペンデータをキャンバスに復元
           if (ds.savedPenData) {
             const canvas = document.getElementById(`drawcanvas-${key}`);
             if (canvas) {
@@ -3055,6 +3068,19 @@ function importData(input) {
       }
 
       showToast(`✅ 写真${photoCount}枚・書き込み${drawingCount}ページを取り込みました`, 'success');
+
+      // トップ画面から取り込んだ場合はPDF読み込みを促す
+      if (currentScreen === 'home') {
+        setTimeout(() => {
+          alert(
+            `✅ データの取り込みが完了しました！\n\n` +
+            `次に前回点検調書のPDFを\n` +
+            `読み込んでください。\n\n` +
+            `取り込んだデータは\n` +
+            `PDF読み込み後に反映されます。`
+          );
+        }, 500);
+      }
 
     } catch(err) {
       console.error(err);
