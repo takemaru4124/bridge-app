@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.1</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.2</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2324,6 +2324,10 @@ function setupDrawEvents(canvas, svg, key) {
           img2.src = saved;
         }
       }
+      // 統合履歴に記録（ペン）
+      if (!ds.history) ds.history = [];
+      ds.history.push({ type: 'pen', penData: canvas.toDataURL() });
+      if (ds.history.length > 30) ds.history.shift();
       ds.penHistory.push(canvas.toDataURL());
       if (ds.penHistory.length > 30) ds.penHistory.shift();
       const ctx = canvas.getContext('2d');
@@ -2392,7 +2396,7 @@ function setupDrawEvents(canvas, svg, key) {
       const shapeType = ds.tool === 'square' ? 'rect' : ds.tool;
       renderPreviewShape(key, ds.startX, ds.startY, ex2, ey2, ds.color, ds.sizeMM, shapeType, ds.pattern);
     } else if (ds.tool === 'select' && ds.selectedId) {
-      // 選択中オブジェクトを移動
+      // 選択中オブジェクトを移動（単体）
       const obj = ds.objects.find(o => o.id === ds.selectedId);
       if (obj) {
         const dx = pos.nx - ds.startX;
@@ -2402,6 +2406,18 @@ function setupDrawEvents(canvas, svg, key) {
         ds.startX = pos.nx; ds.startY = pos.ny;
         renderSVGObjects(key);
       }
+    } else if (ds.tool === 'select' && ds.selectedIds && ds.selectedIds.length > 1) {
+      // 複数選択オブジェクトを一括移動
+      const dx = pos.nx - ds.startX;
+      const dy = pos.ny - ds.startY;
+      ds.objects.forEach(obj => {
+        if (ds.selectedIds.includes(obj.id)) {
+          obj.x1 += dx; obj.y1 += dy;
+          obj.x2 += dx; obj.y2 += dy;
+        }
+      });
+      ds.startX = pos.nx; ds.startY = pos.ny;
+      renderSVGObjects(key);
     }
   };
 
@@ -2450,6 +2466,9 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'line' || ds.tool === 'arrow') {
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
       if (dist > 0.01) {
+        if (!ds.history) ds.history = [];
+        ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+        if (ds.history.length > 30) ds.history.shift();
         ds.objects.push({
           id: Date.now(), type: ds.tool,
           x1: ds.startX, y1: ds.startY, x2: ex, y2: ey,
@@ -2466,7 +2485,6 @@ function setupDrawEvents(canvas, svg, key) {
         const dw = Math.abs(ex - ds.startX);
         const dh = Math.abs(ey - ds.startY);
         if (dw > 0 && dh > 0) {
-          // squareツールは常に正方形、rectは85%以上でスナップ
           const forceSquare = ds.tool === 'square';
           const ratio = Math.min(dw, dh) / Math.max(dw, dh);
           if (forceSquare || ratio > 0.85) {
@@ -2475,7 +2493,9 @@ function setupDrawEvents(canvas, svg, key) {
             y2 = ds.startY + (ey > ds.startY ? size : -size);
           }
         }
-        // squareもrectとして保存
+        if (!ds.history) ds.history = [];
+        ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+        if (ds.history.length > 30) ds.history.shift();
         const type = ds.tool === 'square' ? 'rect' : ds.tool;
         ds.objects.push({
           id: Date.now(), type,
@@ -2495,6 +2515,35 @@ function setupDrawEvents(canvas, svg, key) {
       clearPreviewLine(key);
     }
   });
+
+  // ===== 長押しでコピー・貼り付け =====
+  let longPressTimer = null;
+  const onLongPressStart = (e) => {
+    if (drawState[key]?.tool !== 'select') return;
+    longPressTimer = setTimeout(() => {
+      const ds = drawState[key];
+      if (!ds) return;
+      if (ds.selectedId) {
+        // 選択中オブジェクトをコピー
+        const obj = ds.objects.find(o => o.id === ds.selectedId);
+        if (obj) {
+          globalClipboard = {...obj};
+          ds.clipboard     = {...obj};
+          showToast('📋 コピーしました（長押しで貼り付け）', 'success');
+        }
+      } else if (globalClipboard || ds.clipboard) {
+        // 貼り付け
+        pasteObj(key);
+      }
+    }, 600);
+  };
+  const onLongPressEnd = () => {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  };
+  canvas.addEventListener('touchstart', onLongPressStart, { passive: true });
+  canvas.addEventListener('touchend',   onLongPressEnd);
+  canvas.addEventListener('touchmove',  onLongPressEnd, { passive: true });
 
   canvas.addEventListener('mousedown',  onStart);
   canvas.addEventListener('mousemove',  onMove);
@@ -2897,22 +2946,32 @@ function setSizeMM(mm, key, btn) {
 function undoDraw(key) {
   const ds = drawState[key];
   if (!ds) return;
-  // オブジェクトがあれば最後を削除
-  if (ds.objects.length > 0) {
-    ds.objects.pop();
-    renderSVGObjects(key);
+
+  // 統合履歴から1つ戻す
+  if (!ds.history) ds.history = [];
+  if (ds.history.length === 0) {
+    showToast('これ以上戻せません', '');
     return;
   }
-  // フリーハンドをundo
-  const canvas = document.getElementById(`drawcanvas-${key}`);
-  if (!canvas || ds.penHistory.length === 0) return;
-  const ctx = canvas.getContext('2d');
-  const last = ds.penHistory.pop();
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  if (last) {
-    const img = new Image();
-    img.onload = () => ctx.drawImage(img,0,0);
-    img.src = last;
+
+  const last = ds.history.pop();
+  if (last.type === 'object') {
+    // オブジェクト操作を戻す
+    ds.objects = last.objects.map(o => ({...o}));
+    ds.selectedId = null;
+    renderSVGObjects(key);
+  } else if (last.type === 'pen') {
+    // ペン操作を戻す
+    const canvas = document.getElementById(`drawcanvas-${key}`);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (last.penData) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0);
+      img.src = last.penData;
+    }
+    ds.savedPenData = last.penData;
   }
 }
 
