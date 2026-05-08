@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.0</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.1</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -4087,16 +4087,15 @@ async function downloadAll() {
 
 // SVGオブジェクトをCanvasに直接描画（DOM非依存）
 async function drawObjectsToCanvas(ctx, objects, W, H) {
-  const mmToPxLocal = (mm) => mm * (W / 210); // A4幅基準
+  const mmToPxLocal = (mm) => mm * (W / 210);
 
   for (const obj of objects) {
     const x1 = obj.x1 * W, y1 = obj.y1 * H;
     const x2 = obj.x2 * W, y2 = obj.y2 * H;
-    const sw = mmToPxLocal(obj.sizeMM || 0.5);
+    const sw  = mmToPxLocal(obj.sizeMM || 0.5);
     const rot = obj.rotation || 0;
 
     ctx.save();
-    // 回転
     if (rot !== 0) {
       const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
       ctx.translate(cx, cy);
@@ -4116,14 +4115,12 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
       ctx.stroke();
 
     } else if (obj.type === 'arrow') {
-      // 引出線（矢印付き）
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
       ctx.stroke();
-      // 矢印ヘッド
       const angle = Math.atan2(y2 - y1, x2 - x1);
-      const ah = sw * 4;
+      const ah = Math.max(sw * 4, 8);
       ctx.beginPath();
       ctx.moveTo(x2, y2);
       ctx.lineTo(x2 - ah * Math.cos(angle - 0.4), y2 - ah * Math.sin(angle - 0.4));
@@ -4133,46 +4130,86 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
       ctx.fill();
 
     } else if (obj.type === 'rect') {
-      const rx = Math.min(x1,x2), ry = Math.min(y1,y2);
-      const rw = Math.abs(x2-x1), rh = Math.abs(y2-y1);
+      const rx = Math.min(x1, x2), ry = Math.min(y1, y2);
+      const rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
+
       if (obj.pattern === 'solid') {
-        ctx.fillStyle = obj.color || '#ef4444';
+        // 塗潰し：透明度40%（背景PDFが透ける・SVGと統一）
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle   = obj.color || '#ef4444';
         ctx.fillRect(rx, ry, rw, rh);
-      } else if (obj.pattern === 'hatch' || obj.pattern === 'diag') {
+        ctx.globalAlpha = 1.0;
         ctx.strokeRect(rx, ry, rw, rh);
-        // ハッチング
-        const step = sw * 6;
+
+      } else if (obj.pattern === 'hatch' || obj.pattern === 'diag') {
+        // 外枠
+        ctx.strokeRect(rx, ry, rw, rh);
+        // クリップしてハッチング
         ctx.save();
+        ctx.beginPath();
         ctx.rect(rx, ry, rw, rh);
         ctx.clip();
+        const step = Math.max(sw * 5, 6);
+        ctx.lineWidth = sw * 0.8;
         ctx.beginPath();
-        const d = obj.pattern === 'hatch' ? rw + rh : rw + rh;
-        for (let i = -d; i < d; i += step) {
+        const d = rw + rh + step * 2;
+        for (let i = -d; i <= d; i += step) {
           if (obj.pattern === 'hatch') {
-            ctx.moveTo(rx + i, ry);
-            ctx.lineTo(rx + i + rh, ry + rh);
-            ctx.moveTo(rx + i, ry + rh);
-            ctx.lineTo(rx + i + rh, ry);
+            ctx.moveTo(rx + i, ry);          ctx.lineTo(rx + i + rh, ry + rh);
+            ctx.moveTo(rx + rw + i, ry);     ctx.lineTo(rx + rw + i - rh, ry + rh);
           } else {
-            ctx.moveTo(rx + i, ry);
-            ctx.lineTo(rx + i + rh, ry + rh);
+            ctx.moveTo(rx + i, ry);          ctx.lineTo(rx + i + rh, ry + rh);
           }
         }
         ctx.stroke();
         ctx.restore();
+
       } else {
         ctx.strokeRect(rx, ry, rw, rh);
       }
 
     } else if (obj.type === 'ellipse') {
-      const cx = (x1+x2)/2, cy = (y1+y2)/2;
-      const rx = Math.abs(x2-x1)/2, ry2 = Math.abs(y2-y1)/2;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, rx, ry2, 0, 0, Math.PI*2);
+      const ecx = (x1 + x2) / 2, ecy = (y1 + y2) / 2;
+      const erx = Math.abs(x2 - x1) / 2, ery = Math.abs(y2 - y1) / 2;
+
       if (obj.pattern === 'solid') {
-        ctx.fillStyle = obj.color || '#ef4444';
+        // 塗潰し：透明度50%
+        ctx.beginPath();
+        ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
+        ctx.globalAlpha = 0.4;
+        ctx.fillStyle   = obj.color || '#ef4444';
         ctx.fill();
+        ctx.globalAlpha = 1.0;
+        ctx.stroke();
+
+      } else if (obj.pattern === 'hatch' || obj.pattern === 'diag') {
+        // 外枠
+        ctx.beginPath();
+        ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        // クリップしてハッチング
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
+        ctx.clip();
+        const step = Math.max(sw * 5, 6);
+        ctx.lineWidth = sw * 0.8;
+        ctx.beginPath();
+        const d = erx + ery + step * 2;
+        for (let i = -d; i <= d; i += step) {
+          if (obj.pattern === 'hatch') {
+            ctx.moveTo(ecx - erx + i, ecy - ery); ctx.lineTo(ecx - erx + i + ery * 2, ecy + ery);
+            ctx.moveTo(ecx + erx + i, ecy - ery); ctx.lineTo(ecx + erx + i - ery * 2, ecy + ery);
+          } else {
+            ctx.moveTo(ecx - erx + i, ecy - ery); ctx.lineTo(ecx - erx + i + ery * 2, ecy + ery);
+          }
+        }
+        ctx.stroke();
+        ctx.restore();
+
       } else {
+        ctx.beginPath();
+        ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
