@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.1</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.2</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -2928,19 +2928,36 @@ function rotateToAngle(key, angleDeg) {
 async function exportForAirDrop() {
   showToast('📡 データを準備中...', '');
   try {
-    // 全データをJSONにまとめる
+    // drawStateからオブジェクトデータとペンデータを収集
+    const drawStateExport = {};
+    for (const key of Object.keys(drawState)) {
+      const ds = drawState[key];
+      if (!ds) continue;
+      // オブジェクトまたはペン履歴がある場合のみ保存
+      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData) {
+        drawStateExport[key] = {
+          objects:      ds.objects      || [],
+          savedPenData: ds.savedPenData || null,
+          color:        ds.color,
+          sizeMM:       ds.sizeMM,
+          pattern:      ds.pattern,
+        };
+      }
+    }
+
     const exportData = {
-      version:   '1.3.0',
+      version:    '1.3.1',
       exportedAt: new Date().toISOString(),
-      pdfName:   state.pdfName || '橋梁点検',
-      photos:    state.photos   || {},
-      drawings:  state.drawings || {},
+      pdfName:    state.pdfName || '橋梁点検',
+      photos:     state.photos   || {},
+      drawings:   state.drawings || {},
+      drawState:  drawStateExport,   // ← 書き込みの本体データ
     };
 
-    const json = JSON.stringify(exportData);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
+    const json     = JSON.stringify(exportData);
+    const blob     = new Blob([json], { type: 'application/json' });
+    const url      = URL.createObjectURL(blob);
+    const a        = document.createElement('a');
     const fileName = `${state.pdfName || '点検データ'}_共有.json`;
     a.href     = url;
     a.download = fileName;
@@ -2949,9 +2966,10 @@ async function exportForAirDrop() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 3000);
 
-    showToast('✅ ファイルを保存しました。AirDropで送ってください！', 'success');
+    const objCount   = Object.keys(drawStateExport).length;
+    const photoCount = Object.keys(state.photos || {}).length;
+    showToast(`✅ 写真${photoCount}枚・書き込み${objCount}ページを共有ファイルに保存しました`, 'success');
 
-    // 操作案内を表示
     setTimeout(() => {
       alert(
         '📡 AirDrop共有の手順\n\n' +
@@ -2971,7 +2989,6 @@ async function exportForAirDrop() {
   }
 }
 
-// データ取り込み（インポート）
 function importData(input) {
   const file = input.files[0];
   if (!file) return;
@@ -2980,20 +2997,18 @@ function importData(input) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-
       if (!data.version || !data.photos) {
         showToast('❌ 対応していないファイル形式です', 'error');
         return;
       }
 
-      // 既存データと統合（上書き確認）
-      const photoCount   = Object.keys(data.photos   || {}).length;
-      const drawingCount = Object.keys(data.drawings  || {}).length;
+      const photoCount   = Object.keys(data.photos    || {}).length;
+      const drawingCount = Object.keys(data.drawState  || data.drawings || {}).length;
 
       const ok = confirm(
         `📥 データを取り込みます\n\n` +
         `・撮影写真：${photoCount}枚\n` +
-        `・書き込み図面：${drawingCount}ページ\n` +
+        `・書き込みデータ：${drawingCount}ページ\n` +
         `・橋梁名：${data.pdfName || '不明'}\n\n` +
         `既存のデータに追加します。よろしいですか？`
       );
@@ -3003,7 +3018,43 @@ function importData(input) {
       Object.assign(state.photos,   data.photos   || {});
       Object.assign(state.drawings, data.drawings  || {});
 
-      showToast(`✅ 写真${photoCount}枚・図面${drawingCount}ページを取り込みました`, 'success');
+      // 書き込みデータ（drawState）を復元
+      if (data.drawState) {
+        for (const [key, ds] of Object.entries(data.drawState)) {
+          if (!drawState[key]) {
+            drawState[key] = {
+              tool: 'scroll', color: '#ef4444', sizeMM: 0.25, pattern: 'none',
+              penHistory: [], objects: [], selectedId: null, clipboard: null,
+              drawing: false, startX: 0, startY: 0, savedPenData: null
+            };
+          }
+          // オブジェクト（図形）を統合
+          if (ds.objects && ds.objects.length > 0) {
+            // IDが重複しないように新しいIDを割り当て
+            const newObjs = ds.objects.map(obj => ({
+              ...obj, id: Date.now() + Math.random()
+            }));
+            drawState[key].objects.push(...newObjs);
+          }
+          // ペンデータを復元（既存がなければ）
+          if (ds.savedPenData && !drawState[key].savedPenData) {
+            drawState[key].savedPenData = ds.savedPenData;
+          }
+          // SVGオブジェクトを再描画
+          renderSVGObjects(key);
+          // ペンデータをキャンバスに復元
+          if (ds.savedPenData) {
+            const canvas = document.getElementById(`drawcanvas-${key}`);
+            if (canvas) {
+              const img = new Image();
+              img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+              img.src = ds.savedPenData;
+            }
+          }
+        }
+      }
+
+      showToast(`✅ 写真${photoCount}枚・書き込み${drawingCount}ページを取り込みました`, 'success');
 
     } catch(err) {
       console.error(err);
