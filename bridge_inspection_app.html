@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.0</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.1</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 </div>
 <div id="screen-menu" class="screen">
@@ -662,6 +662,60 @@
           <div class="download-item-sub">書き込み図面＋撮影写真をZIPで保存</div>
         </div>
         <button class="download-btn">保存</button>
+      </div>
+      <div class="download-item" onclick="exportForAirDrop()">
+        <span class="download-item-icon">📡</span>
+        <div class="download-item-body">
+          <div class="download-item-title">AirDrop / データ共有</div>
+          <div class="download-item-sub">写真・書き込みを他のiPadに送る</div>
+        </div>
+        <button class="download-btn" style="background:var(--accent);">共有</button>
+      </div>
+      <div class="download-item" onclick="document.getElementById('import-file-input').click()">
+        <span class="download-item-icon">📥</span>
+        <div class="download-item-body">
+          <div class="download-item-title">データ取り込み</div>
+          <div class="download-item-sub">他のiPadから受け取ったデータを読み込む</div>
+        </div>
+        <button class="download-btn">取り込み</button>
+      </div>
+      <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importData(this)">
+      <div class="download-item" onclick="showSDCardModal()">
+        <span class="download-item-icon">📷</span>
+        <div class="download-item-body">
+          <div class="download-item-title">Wi-Fi SDカード 写真取り込み</div>
+          <div class="download-item-sub">FlashAir等からデジカメ写真を取り込む</div>
+        </div>
+        <button class="download-btn" style="background:var(--green);">接続</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SDカードモーダル -->
+<div id="sd-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.85);overflow-y:auto;">
+  <div style="background:var(--surface);margin:16px;border-radius:16px;overflow:hidden;">
+    <div style="padding:14px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-size:14px;font-weight:700;color:var(--accent);">📷 Wi-Fi SDカード 写真取り込み</div>
+      <button onclick="closeSDModal()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px;">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+        事前にiPadのWi-Fiを「SDカードのネットワーク」に接続してください
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input id="sd-url-input" type="text" placeholder="例: http://flashair/ または http://192.168.0.1/"
+          style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font-size:12px;"
+          value="http://flashair/">
+        <button onclick="connectSDCard()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">接続</button>
+      </div>
+      <div id="sd-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;"></div>
+      <div id="sd-photo-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:50vh;overflow-y:auto;"></div>
+      <div id="sd-assign-panel" style="display:none;margin-top:12px;padding:12px;background:var(--surface2);border-radius:8px;">
+        <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;">📌 写真番号を割り当て</div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">選択した写真をどの写真番号に割り当てますか？</div>
+        <select id="sd-slot-select" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px;font-size:12px;margin-bottom:8px;"></select>
+        <button onclick="assignSDPhoto()" style="width:100%;background:var(--accent);border:none;color:#fff;border-radius:8px;padding:10px;font-size:13px;font-weight:700;cursor:pointer;">この写真番号に割り当て</button>
       </div>
     </div>
   </div>
@@ -2868,6 +2922,238 @@ function rotateToAngle(key, angleDeg) {
   if (!obj) return;
   obj.rotation = ((parseFloat(angleDeg) || 0) + 360) % 360;
   renderSVGObjects(key);
+}
+
+// ===== AirDrop / データ共有 =====
+async function exportForAirDrop() {
+  showToast('📡 データを準備中...', '');
+  try {
+    // 全データをJSONにまとめる
+    const exportData = {
+      version:   '1.3.0',
+      exportedAt: new Date().toISOString(),
+      pdfName:   state.pdfName || '橋梁点検',
+      photos:    state.photos   || {},
+      drawings:  state.drawings || {},
+    };
+
+    const json = JSON.stringify(exportData);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const fileName = `${state.pdfName || '点検データ'}_共有.json`;
+    a.href     = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+
+    showToast('✅ ファイルを保存しました。AirDropで送ってください！', 'success');
+
+    // 操作案内を表示
+    setTimeout(() => {
+      alert(
+        '📡 AirDrop共有の手順\n\n' +
+        '① ダウンロードされた「' + fileName + '」を\n' +
+        '　 ファイルアプリで開く\n\n' +
+        '② 共有ボタン（□↑）をタップ\n\n' +
+        '③ AirDropで相手のiPadを選択\n\n' +
+        '④ 受け取った側は\n' +
+        '　 アプリの「データ取り込み」から\n' +
+        '　 そのファイルを選択'
+      );
+    }, 500);
+
+  } catch(err) {
+    console.error(err);
+    showToast('❌ 共有に失敗しました', 'error');
+  }
+}
+
+// データ取り込み（インポート）
+function importData(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+
+      if (!data.version || !data.photos) {
+        showToast('❌ 対応していないファイル形式です', 'error');
+        return;
+      }
+
+      // 既存データと統合（上書き確認）
+      const photoCount   = Object.keys(data.photos   || {}).length;
+      const drawingCount = Object.keys(data.drawings  || {}).length;
+
+      const ok = confirm(
+        `📥 データを取り込みます\n\n` +
+        `・撮影写真：${photoCount}枚\n` +
+        `・書き込み図面：${drawingCount}ページ\n` +
+        `・橋梁名：${data.pdfName || '不明'}\n\n` +
+        `既存のデータに追加します。よろしいですか？`
+      );
+      if (!ok) return;
+
+      // 写真を統合
+      Object.assign(state.photos,   data.photos   || {});
+      Object.assign(state.drawings, data.drawings  || {});
+
+      showToast(`✅ 写真${photoCount}枚・図面${drawingCount}ページを取り込みました`, 'success');
+
+    } catch(err) {
+      console.error(err);
+      showToast('❌ ファイルの読み込みに失敗しました', 'error');
+    }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
+// ===== Wi-Fi SDカード連携 =====
+let _sdSelectedPhotoURL = null;
+
+function showSDCardModal() {
+  document.getElementById('sd-modal').style.display = 'block';
+  document.getElementById('sd-status').textContent = '';
+  document.getElementById('sd-photo-list').innerHTML = '';
+  document.getElementById('sd-assign-panel').style.display = 'none';
+
+  // 写真番号スロットをセレクトボックスに設定
+  const select = document.getElementById('sd-slot-select');
+  select.innerHTML = '';
+  const allSlots = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS];
+  allSlots.forEach(slot => {
+    const opt = document.createElement('option');
+    opt.value = slot.key;
+    opt.textContent = `No.${slot.prevNo}${slot.isNON ? ' (NON)' : ''}`;
+    select.appendChild(opt);
+  });
+}
+
+function closeSDModal() {
+  document.getElementById('sd-modal').style.display = 'none';
+  _sdSelectedPhotoURL = null;
+}
+
+async function connectSDCard() {
+  const baseURL = document.getElementById('sd-url-input').value.trim().replace(/\/$/, '');
+  const status  = document.getElementById('sd-status');
+  const list    = document.getElementById('sd-photo-list');
+
+  status.textContent = '🔄 接続中...';
+  status.style.color = 'var(--text2)';
+  list.innerHTML = '';
+
+  try {
+    // FlashAirのAPI: /command.cgi?op=100&DIR=/DCIM
+    const dirURL = `${baseURL}/command.cgi?op=100&DIR=/DCIM`;
+    const resp   = await fetch(dirURL, { mode: 'cors' });
+    const text   = await resp.text();
+
+    // ファイル一覧を解析
+    const lines = text.split('\n').filter(l => l.trim());
+    const photos = [];
+    for (const line of lines) {
+      const parts = line.split(',');
+      if (parts.length >= 4) {
+        const dir  = parts[0];
+        const name = parts[1];
+        if (/\.(jpg|jpeg|png)$/i.test(name)) {
+          photos.push({ dir, name, url: `${baseURL}${dir}/${name}` });
+        }
+      }
+    }
+
+    // サブディレクトリも探索
+    if (photos.length === 0) {
+      // /DCIM直下のサブフォルダを試す
+      const subResp = await fetch(`${baseURL}/command.cgi?op=100&DIR=/DCIM`, { mode: 'cors' });
+      const subText = await subResp.text();
+      const dirs = subText.split('\n')
+        .filter(l => l.includes('/DCIM'))
+        .map(l => l.split(',')[0]);
+
+      for (const d of dirs.slice(0, 5)) {
+        const pResp = await fetch(`${baseURL}/command.cgi?op=100&DIR=${d}`, { mode: 'cors' });
+        const pText = await pResp.text();
+        pText.split('\n').filter(l => /\.(jpg|jpeg|png)$/i.test(l)).forEach(l => {
+          const p = l.split(',');
+          if (p[1]) photos.push({ dir: d, name: p[1], url: `${baseURL}${d}/${p[1]}` });
+        });
+      }
+    }
+
+    if (photos.length === 0) {
+      status.textContent = '⚠️ 写真が見つかりませんでした';
+      status.style.color = 'var(--yellow)';
+      return;
+    }
+
+    status.textContent = `✅ ${photos.length}枚の写真が見つかりました。タップして選択してください`;
+    status.style.color = 'var(--green)';
+
+    // 写真一覧を表示
+    photos.forEach(photo => {
+      const div = document.createElement('div');
+      div.style.cssText = 'cursor:pointer;border:2px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--surface2);display:flex;align-items:center;justify-content:center;';
+      div.innerHTML = `<div style="font-size:10px;color:var(--text2);text-align:center;padding:4px;">${photo.name}</div>`;
+      div.onclick = () => selectSDPhoto(photo.url, photo.name, div);
+
+      // サムネイルを遅延ロード
+      const img = new Image();
+      img.onload = () => {
+        div.innerHTML = '';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        div.appendChild(img);
+      };
+      img.src = photo.url;
+      list.appendChild(div);
+    });
+
+  } catch(err) {
+    console.error(err);
+    status.textContent = '❌ 接続失敗。iPadのWi-FiがSDカードに接続されているか確認してください';
+    status.style.color = 'var(--red)';
+  }
+}
+
+function selectSDPhoto(url, name, el) {
+  // 選択状態を更新
+  document.querySelectorAll('#sd-photo-list > div').forEach(d => {
+    d.style.borderColor = 'var(--border)';
+  });
+  el.style.borderColor = 'var(--accent)';
+
+  _sdSelectedPhotoURL = url;
+  document.getElementById('sd-assign-panel').style.display = 'block';
+  document.getElementById('sd-status').textContent = `✅ 「${name}」を選択中`;
+}
+
+async function assignSDPhoto() {
+  if (!_sdSelectedPhotoURL) return;
+  const slotKey = document.getElementById('sd-slot-select').value;
+  if (!slotKey) return;
+
+  try {
+    const resp = await fetch(_sdSelectedPhotoURL);
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      if (!state.photos) state.photos = {};
+      state.photos[slotKey] = e.target.result;
+      showToast('✅ 写真を割り当てました！', 'success');
+      document.getElementById('sd-assign-panel').style.display = 'none';
+      _sdSelectedPhotoURL = null;
+    };
+    reader.readAsDataURL(blob);
+  } catch(err) {
+    showToast('❌ 写真の取り込みに失敗しました', 'error');
+  }
 }
 
 // ===== 保存 =====
