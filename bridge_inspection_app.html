@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.3</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.4</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2229,12 +2229,15 @@ function setupDrawEvents(canvas, svg, key) {
   // ===== ポインタ開始 =====
   const onStart = (e) => {
     if (e.touches && e.touches.length >= 2) {
-      // 2本指タッチ時は必ずdrawingをリセット
       if (drawState[key]) drawState[key].drawing = false;
       return;
     }
-    // スクロールツール または ズーム中は描画しない
-    if (drawState[key]?.tool === 'scroll' || (zoomScales[key] || 1) > 1.05) return;
+    const ds = drawState[key];
+    // スクロールモードはパンに渡す
+    if (ds?.tool === 'scroll') return;
+    // 選択ツールはズーム中でも通す（移動・コピペのため）
+    const isSelect = ds?.tool === 'select';
+    if (!isSelect && (zoomScales[key] || 1) > 1.05) return;
     e.preventDefault();
     const ds = drawState[key];
     const pos = getPos(e);
@@ -2296,14 +2299,15 @@ function setupDrawEvents(canvas, svg, key) {
   // ===== ポインタ移動 =====
   const onMove = (e) => {
     if (e.touches && e.touches.length >= 2) {
-      // 2本指になったら描画を中断
       if (drawState[key]) drawState[key].drawing = false;
       clearPreviewLine(key);
       return;
     }
-    e.preventDefault();
     const ds = drawState[key];
     if (!ds.drawing) return;
+    // 選択ツール以外はズーム中はパンに任せる
+    if (ds.tool !== 'select' && (zoomScales[key] || 1) > 1.05) return;
+    e.preventDefault();
     const pos = getPos(e);
     ds.lastX = pos.nx; ds.lastY = pos.ny;
 
@@ -2675,55 +2679,61 @@ function renderSVGObjects(key) {
 
     svg.appendChild(g);
 
-    // 選択時: 回転ハンドル（SVG circle）と編集ボタン（SVG circle）を表示
+    // 選択時: 回転ハンドル（大きめ・使いやすく）
     if (isSel) {
       const hx = cx;
-      const hy = Math.min(y1, y2) - 28;
+      const hy = Math.min(y1, y2) - 36;
 
-      // 回転ハンドル（↻）- pointer-events:autoで個別に有効化
+      // 回転ハンドル
       const rotGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
       rotGroup.style.cursor = 'grab';
       rotGroup.style.pointerEvents = 'auto';
 
+      // 外側の大きい透明ヒットエリア（タップしやすく）
+      const rotHitArea = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      rotHitArea.setAttribute('cx', hx);
+      rotHitArea.setAttribute('cy', hy);
+      rotHitArea.setAttribute('r', 28);
+      rotHitArea.setAttribute('fill', 'transparent');
+      rotGroup.appendChild(rotHitArea);
+
+      // 見た目のサークル
       const rotCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
       rotCircle.setAttribute('cx', hx);
       rotCircle.setAttribute('cy', hy);
-      rotCircle.setAttribute('r', 14);
+      rotCircle.setAttribute('r', 20);
       rotCircle.setAttribute('fill', 'var(--accent)');
       rotCircle.setAttribute('stroke', '#fff');
-      rotCircle.setAttribute('stroke-width', '2');
+      rotCircle.setAttribute('stroke-width', '2.5');
       rotGroup.appendChild(rotCircle);
 
       const rotText = document.createElementNS('http://www.w3.org/2000/svg','text');
       rotText.setAttribute('x', hx);
-      rotText.setAttribute('y', hy + 4);
+      rotText.setAttribute('y', hy + 6);
       rotText.setAttribute('text-anchor', 'middle');
+      rotText.setAttribute('font-size', '18');
       rotText.setAttribute('fill', '#fff');
-      rotText.setAttribute('font-size', '13');
       rotText.setAttribute('pointer-events', 'none');
       rotText.textContent = '↻';
       rotGroup.appendChild(rotText);
 
-      // タッチ・マウスイベント（stopPropagationで選択解除を防ぐ）
-      // touch-action:noneで確実にタッチを受け取る
-      rotGroup.setAttribute('touch-action', 'none');
+      // 「押しながらドラッグ」ヒント
+      const hintText = document.createElementNS('http://www.w3.org/2000/svg','text');
+      hintText.setAttribute('x', hx);
+      hintText.setAttribute('y', hy - 26);
+      hintText.setAttribute('text-anchor', 'middle');
+      hintText.setAttribute('font-size', '9');
+      hintText.setAttribute('fill', 'var(--accent)');
+      hintText.setAttribute('pointer-events', 'none');
+      hintText.textContent = '押しながらドラッグ';
+      rotGroup.appendChild(hintText);
+
       const onRotStart = (e) => {
-        e.stopPropagation();
-        e.preventDefault();
+        e.stopPropagation(); e.preventDefault();
         startRotateHandle(e, key);
       };
       rotGroup.addEventListener('mousedown',  onRotStart);
       rotGroup.addEventListener('touchstart', onRotStart, { passive: false });
-      // ヒットエリアを広げる（透明な大きなcircle）
-      const rotHit = document.createElementNS('http://www.w3.org/2000/svg','circle');
-      rotHit.setAttribute('cx', hx);
-      rotHit.setAttribute('cy', hy);
-      rotHit.setAttribute('r', 22);
-      rotHit.setAttribute('fill', 'transparent');
-      rotHit.setAttribute('stroke', 'none');
-      rotHit.addEventListener('mousedown',  onRotStart);
-      rotHit.addEventListener('touchstart', onRotStart, { passive: false });
-      rotGroup.appendChild(rotHit);
       svg.appendChild(rotGroup);
 
       // 編集ボタン（✏️）- pointer-events:autoで個別に有効化
@@ -2865,20 +2875,48 @@ function setPattern(pattern, key, btn) {
   btn.classList.add('active');
 }
 function hitTest(nx, ny, objects, canvas) {
-  const W = canvas.getBoundingClientRect().width;
-  const H = canvas.getBoundingClientRect().height;
+  const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
+  const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
   const px = nx * W, py = ny * H;
-  const THRESH = 12;
+  const THRESH = 18; // タップ許容範囲（px）
+
   // 後ろから（前面優先）
   for (let i = objects.length - 1; i >= 0; i--) {
     const o = objects[i];
-    const x1=o.x1*W, y1=o.y1*H, x2=o.x2*W, y2=o.y2*H;
-    const len2 = (x2-x1)**2 + (y2-y1)**2;
-    if (len2 < 1) continue;
-    const t = Math.max(0, Math.min(1, ((px-x1)*(x2-x1)+(py-y1)*(y2-y1)) / len2));
-    const dx = px - (x1 + t*(x2-x1));
-    const dy = py - (y1 + t*(y2-y1));
-    if (Math.sqrt(dx*dx+dy*dy) < THRESH) return o;
+    const x1 = o.x1*W, y1 = o.y1*H;
+    const x2 = o.x2*W, y2 = o.y2*H;
+
+    // 回転考慮（中心を軸に逆回転してローカル座標で判定）
+    const rot = o.rotation || 0;
+    let lpx = px, lpy = py;
+    if (rot !== 0) {
+      const cx = (x1+x2)/2, cy = (y1+y2)/2;
+      const rad = -rot * Math.PI / 180;
+      const dx = px - cx, dy = py - cy;
+      lpx = cx + dx*Math.cos(rad) - dy*Math.sin(rad);
+      lpy = cy + dx*Math.sin(rad) + dy*Math.cos(rad);
+    }
+
+    if (o.type === 'rect') {
+      const rx = Math.min(x1,x2)-THRESH, ry = Math.min(y1,y2)-THRESH;
+      const rw = Math.abs(x2-x1)+THRESH*2, rh = Math.abs(y2-y1)+THRESH*2;
+      if (lpx >= rx && lpx <= rx+rw && lpy >= ry && lpy <= ry+rh) return o;
+
+    } else if (o.type === 'ellipse') {
+      const cx = (x1+x2)/2, cy = (y1+y2)/2;
+      const erx = Math.abs(x2-x1)/2+THRESH, ery = Math.abs(y2-y1)/2+THRESH;
+      if (erx > 0 && ery > 0) {
+        const dx = lpx-cx, dy = lpy-cy;
+        if ((dx*dx)/(erx*erx)+(dy*dy)/(ery*ery) <= 1) return o;
+      }
+
+    } else if (o.type === 'line' || o.type === 'arrow') {
+      const len2 = (x2-x1)**2 + (y2-y1)**2;
+      if (len2 < 1) continue;
+      const t  = Math.max(0, Math.min(1, ((lpx-x1)*(x2-x1)+(lpy-y1)*(y2-y1))/len2));
+      const dx = lpx-(x1+t*(x2-x1)), dy = lpy-(y1+t*(y2-y1));
+      if (Math.sqrt(dx*dx+dy*dy) < THRESH) return o;
+    }
   }
   return null;
 }
