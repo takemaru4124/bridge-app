@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.7</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.8</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1856,6 +1856,7 @@ function popupPhotoSelected(input) {
   const reader = new FileReader();
   reader.onload = (e) => {
     if (!state.photos) state.photos = {};
+    // dataURL文字列で保存（renderPhotoSlotと整合）
     state.photos[_popupSlotKey] = e.target.result;
 
     // ポップアップを更新
@@ -1863,13 +1864,26 @@ function popupPhotoSelected(input) {
     const slot  = slots.find(s => s.key === _popupSlotKey);
     if (slot) updatePopup(slot);
 
-    // 損傷写真タブのカード画像を更新
-    const cardImg = document.querySelector(`#photo-card-current-${_popupSlotKey}`);
-    if (cardImg) {
-      cardImg.src = e.target.result;
-      cardImg.style.display = 'block';
-      const placeholder = cardImg.parentElement?.querySelector('.photo-placeholder');
-      if (placeholder) placeholder.style.display = 'none';
+    // 損傷写真タブのカードを再描画
+    const card = document.querySelector(`.photo-card[data-slot="${_popupSlotKey}"]`);
+    if (card && slot) {
+      const sectionKey = card.dataset.section || 's10';
+      card.outerHTML = renderPhotoSlot(slot, sectionKey);
+      // 前回写真も再ロード
+      const newCard = document.querySelector(`.photo-card[data-slot="${_popupSlotKey}"]`);
+      if (newCard && slot.prevPage) {
+        getPrevPhotoForSlot(slot).then(imgData => {
+          if (!imgData) return;
+          const wrap = document.getElementById(`prev-wrap-${slot.key}`);
+          if (wrap) {
+            wrap.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = imgData;
+            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
+            wrap.appendChild(img);
+          }
+        });
+      }
     }
 
     // 写真番号ボタンの色を更新（緑色に）
@@ -1878,6 +1892,7 @@ function popupPhotoSelected(input) {
       renderPhotoLinkButtons(drawKey);
     });
 
+    updatePhotoProgress();
     showToast('✅ 写真を保存しました', 'success');
   };
   reader.readAsDataURL(input.files[0]);
@@ -3737,7 +3752,10 @@ async function getPrevPhotoForSlot(slot) {
 }
 
 function renderPhotoSlot(slot, sectionKey) {
-  const photo   = state.photos[slot.key];
+  const photoRaw = state.photos[slot.key];
+  // dataURLは文字列またはオブジェクト{dataURL}の両方に対応
+  const photoURL = typeof photoRaw === 'string' ? photoRaw : photoRaw?.dataURL;
+  const photo    = photoURL ? { dataURL: photoURL } : null;
   const reqBadge = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
   const nonBadge = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
   const statusHTML = photo
