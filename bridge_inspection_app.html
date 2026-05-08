@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.3</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.3.4</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎボタン -->
@@ -1208,6 +1208,7 @@ async function loadPDF(input) {
   showToast('PDFを読み込んでいます...', '');
   try {
     const arrayBuffer = await file.arrayBuffer();
+    state.pdfData = arrayBuffer; // ← AirDrop共有用に保存
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     state.pdfDoc = pdf;
     state.pdfName = file.name.replace('.pdf', '');
@@ -1215,7 +1216,6 @@ async function loadPDF(input) {
     state.pageCache = {};
     Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
 
-    // ===== ページ自動検出 =====
     showToast('ページ構成を解析中...', '');
     await detectPageStructure(pdf);
 
@@ -2951,7 +2951,6 @@ async function exportForAirDrop() {
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
       if (!ds) continue;
-      // オブジェクトまたはペン履歴がある場合のみ保存
       if ((ds.objects && ds.objects.length > 0) || ds.savedPenData) {
         drawStateExport[key] = {
           objects:      ds.objects      || [],
@@ -2963,13 +2962,25 @@ async function exportForAirDrop() {
       }
     }
 
+    // PDFをBase64に変換
+    let pdfBase64 = null;
+    if (state.pdfData) {
+      // state.pdfDataがArrayBufferの場合
+      const bytes  = new Uint8Array(state.pdfData);
+      let binary   = '';
+      bytes.forEach(b => binary += String.fromCharCode(b));
+      pdfBase64 = btoa(binary);
+      showToast('📄 PDFを変換中...', '');
+    }
+
     const exportData = {
-      version:    '1.3.1',
+      version:    '1.3.3',
       exportedAt: new Date().toISOString(),
-      pdfName:    state.pdfName || '橋梁点検',
+      pdfName:    state.pdfName  || '橋梁点検',
+      pdfBase64:  pdfBase64,      // ← PDFデータ本体
       photos:     state.photos   || {},
       drawings:   state.drawings || {},
-      drawState:  drawStateExport,   // ← 書き込みの本体データ
+      drawState:  drawStateExport,
     };
 
     const json     = JSON.stringify(exportData);
@@ -2986,7 +2997,8 @@ async function exportForAirDrop() {
 
     const objCount   = Object.keys(drawStateExport).length;
     const photoCount = Object.keys(state.photos || {}).length;
-    showToast(`✅ 写真${photoCount}枚・書き込み${objCount}ページを共有ファイルに保存しました`, 'success');
+    const pdfInfo    = pdfBase64 ? '・PDF含む' : '';
+    showToast(`✅ 写真${photoCount}枚・書き込み${objCount}ページ${pdfInfo}を共有ファイルに保存`, 'success');
 
     setTimeout(() => {
       alert(
@@ -2996,8 +3008,9 @@ async function exportForAirDrop() {
         '② 共有ボタン（□↑）をタップ\n\n' +
         '③ AirDropで相手のiPadを選択\n\n' +
         '④ 受け取った側は\n' +
-        '　 アプリの「データ取り込み」から\n' +
-        '　 そのファイルを選択'
+        '　 アプリのトップ画面で\n' +
+        '　「データ取り込み」を選択\n\n' +
+        '　→ PDFも自動で読み込まれます！'
       );
     }, 500);
 
@@ -3012,7 +3025,7 @@ function importData(input) {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const data = JSON.parse(e.target.result);
       if (!data.version || !data.photos) {
@@ -3035,6 +3048,39 @@ function importData(input) {
       // 写真・書き込みを統合
       Object.assign(state.photos,   data.photos   || {});
       Object.assign(state.drawings, data.drawings  || {});
+
+      // PDFを復元（Base64→ArrayBuffer→PDF.js）
+      if (data.pdfBase64) {
+        try {
+          showToast('📄 PDFを復元中...', '');
+          const binary = atob(data.pdfBase64);
+          const bytes  = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const arrayBuffer = bytes.buffer;
+
+          state.pdfData = arrayBuffer;
+          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          state.pdfDoc      = pdf;
+          state.pdfName     = data.pdfName || '引き継ぎデータ';
+          state.totalPages  = pdf.numPages;
+          state.pageCache   = {};
+          Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
+
+          await detectPageStructure(pdf);
+
+          // ホーム画面のUI更新
+          document.getElementById('pdf-name').textContent  = state.pdfName + '.pdf';
+          document.getElementById('pdf-pages').textContent = `${pdf.numPages} ページ`;
+          document.getElementById('upload-zone').classList.add('hidden');
+          document.getElementById('pdf-loaded-info').classList.remove('hidden');
+          document.getElementById('btn-survey').disabled  = false;
+          document.getElementById('btn-inspect').disabled = false;
+
+        } catch(pdfErr) {
+          console.error('PDF復元エラー:', pdfErr);
+          showToast('⚠️ PDF復元に失敗しました。手動でPDFを読み込んでください', 'error');
+        }
+      }
 
       // drawStateを復元
       if (data.drawState) {
@@ -3069,17 +3115,26 @@ function importData(input) {
 
       showToast(`✅ 写真${photoCount}枚・書き込み${drawingCount}ページを取り込みました`, 'success');
 
-      // トップ画面から取り込んだ場合はPDF読み込みを促す
-      if (currentScreen === 'home') {
+      const hasPDF = !!data.pdfBase64;
+
+      // トップ画面から取り込んだ場合
+      if (currentScreen === 'home' && !hasPDF) {
         setTimeout(() => {
           alert(
             `✅ データの取り込みが完了しました！\n\n` +
             `次に前回点検調書のPDFを\n` +
-            `読み込んでください。\n\n` +
-            `取り込んだデータは\n` +
-            `PDF読み込み後に反映されます。`
+            `読み込んでください。`
           );
         }, 500);
+      } else if (currentScreen === 'home' && hasPDF) {
+        setTimeout(() => {
+          alert(
+            `✅ データの取り込みが完了しました！\n\n` +
+            `PDFも自動で読み込みました。\n` +
+            `「踏査」または「本調査」を\n` +
+            `タップして開始してください！`
+          );
+        }, 800);
       }
 
     } catch(err) {
