@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.1</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.2</span> &nbsp;|&nbsp; 2026-05-09
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3385,8 +3385,7 @@ function importData(input) {
       }
 
       if (!jsonFile) {
-        // ファイル一覧をユーザーに表示してデバッグ
-        showToast(`❌ JSONが見つかりません。ZIP内: ${fileList.join(', ')}`, 'error');
+        showToast('❌ このZIPは画像のみのファイルです。作業の復元には「作業保存」で出力したZIPをお使いください。', 'error');
         return;
       }
 
@@ -3428,7 +3427,7 @@ function importData(input) {
         if (jsonFiles.length > 0) jsonFile = jsonFiles[0];
       }
       if (!jsonFile) {
-        showToast(`❌ データが見つかりません（内容: ${fileList.join(', ')}）`, 'error');
+        showToast('❌ このZIPは画像のみのファイルです。作業の復元には「作業保存」で出力したZIPをお使いください。', 'error');
         return;
       }
       const jsonStr = await jsonFile.async('string');
