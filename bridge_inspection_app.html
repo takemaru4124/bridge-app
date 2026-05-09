@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.9</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.0</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -657,7 +657,7 @@
         </div>
         <button style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">取り込み</button>
       </div>
-      <input type="file" id="import-file-home" accept=".zip,.json" style="display:none" onchange="importData(this)">
+      <input type="file" id="import-file-home" accept=".zip,.json,application/zip,application/json" style="display:none" onchange="importData(this)">
     </div>
   </div>
 </div>
@@ -707,7 +707,7 @@
         </div>
         <button class="download-btn">取り込み</button>
       </div>
-      <input type="file" id="import-file-input" accept=".zip,.json" style="display:none" onchange="importData(this)">
+      <input type="file" id="import-file-input" accept=".zip,.json,application/zip,application/json" style="display:none" onchange="importData(this)">
       <div class="download-item" onclick="showSDCardModal()">
         <span class="download-item-icon">📷</span>
         <div class="download-item-body">
@@ -3365,20 +3365,28 @@ function importData(input) {
   const file = input.files[0];
   if (!file) return;
 
-  const isZip  = file.name.endsWith('.zip');
-  const isJson = file.name.endsWith('.json');
+  const isZip  = file.name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
+  const isJson = file.name.endsWith('.json') || file.type === 'application/json';
 
   if (isZip) {
     JSZip.loadAsync(file).then(async (zip) => {
-      // JSONファイルを探す（新形式・旧形式両対応）
+      // ZIP内のファイル一覧を確認
+      const fileList = Object.keys(zip.files);
+      console.log('ZIP内ファイル一覧:', fileList);
+
+      // JSONファイルを探す（複数パターン対応）
       let jsonFile = zip.file('work_data.json');
       if (!jsonFile) jsonFile = zip.file('作業データ.json');
       if (!jsonFile) {
-        // JSON拡張子のファイルを探す
         const jsonFiles = zip.file(/\.json$/i);
         if (jsonFiles.length > 0) jsonFile = jsonFiles[0];
       }
-      if (!jsonFile) { showToast('❌ 作業データが見つかりません', 'error'); return; }
+
+      if (!jsonFile) {
+        // ファイル一覧をユーザーに表示してデバッグ
+        showToast(`❌ JSONが見つかりません。ZIP内: ${fileList.join(', ')}`, 'error');
+        return;
+      }
 
       const jsonStr = await jsonFile.async('string');
       const data    = JSON.parse(jsonStr);
@@ -3393,7 +3401,7 @@ function importData(input) {
       await applyImportData(data, null, pdfArrayBuffer);
     }).catch(err => {
       console.error(err);
-      showToast('❌ ZIPファイルの読み込みに失敗しました', 'error');
+      showToast(`❌ ZIP読み込み失敗: ${err.message}`, 'error');
     });
   } else if (isJson) {
     // JSONファイルの場合（旧形式対応）
@@ -3408,7 +3416,28 @@ function importData(input) {
     };
     reader.readAsText(file);
   } else {
-    showToast('❌ ZIPまたはJSONファイルを選択してください', 'error');
+    // 拡張子不明の場合はZIPとして試みる
+    JSZip.loadAsync(file).then(async (zip) => {
+      const fileList  = Object.keys(zip.files);
+      let jsonFile    = zip.file('work_data.json');
+      if (!jsonFile) jsonFile = zip.file('作業データ.json');
+      if (!jsonFile) {
+        const jsonFiles = zip.file(/\.json$/i);
+        if (jsonFiles.length > 0) jsonFile = jsonFiles[0];
+      }
+      if (!jsonFile) {
+        showToast(`❌ データが見つかりません（内容: ${fileList.join(', ')}）`, 'error');
+        return;
+      }
+      const jsonStr = await jsonFile.async('string');
+      const data    = JSON.parse(jsonStr);
+      let pdfArrayBuffer = null;
+      const pdfFiles = zip.file(/\.pdf$/i);
+      if (pdfFiles.length > 0) pdfArrayBuffer = await pdfFiles[0].async('arraybuffer');
+      await applyImportData(data, null, pdfArrayBuffer);
+    }).catch(() => {
+      showToast('❌ ZIPまたはJSONファイルを選択してください', 'error');
+    });
   }
   input.value = '';
 }
