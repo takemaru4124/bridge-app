@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.5</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.6</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2246,10 +2246,13 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'select') {
       const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
       if (hit) {
-        // ヒット時：選択してドラッグ移動モードへ
-        ds.selectedId  = hit.id;
-        ds.selectedIds = [hit.id];
-        ds.drawing     = true;
+        // ヒット時：移動前の状態をhistoryに記録
+        if (!ds.history) ds.history = [];
+        ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+        if (ds.history.length > 50) ds.history.shift();
+        ds.selectedId    = hit.id;
+        ds.selectedIds   = [hit.id];
+        ds.drawing       = true;
         ds.isRangeSelect = false;
         ds.startX = pos.nx; ds.startY = pos.ny;
         ds.lastX  = pos.nx; ds.lastY  = pos.ny;
@@ -2480,30 +2483,40 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== 長押しでコピー・貼り付け（選択ツール専用）=====
   let longPressTimer = null;
+  let longPressTouchPos = { nx: 0, ny: 0 };
+
   const onLongPressStart = (e) => {
     const ds = drawState[key];
     if (ds?.tool !== 'select') return;
+    // タッチ位置を記録（貼り付け先に使う）
+    if (e.touches && e.touches[0]) {
+      const p = getPos(e);
+      longPressTouchPos = { nx: p.nx, ny: p.ny };
+    }
     longPressTimer = setTimeout(() => {
       longPressTimer = null;
       const ds2 = drawState[key];
       if (!ds2) return;
       if (ds2.selectedId) {
-        // 選択中 → コピー
+        // 選択中 → コピー（トーストなし）
         const obj = ds2.objects.find(o => o.id === ds2.selectedId);
         if (obj) {
           globalClipboard = {...obj};
           ds2.clipboard   = {...obj};
-          showToast('📋 コピーしました！長押しで貼り付け', 'success');
+          // 軽い触覚フィードバック代わりに小さいトースト
+          showToast('📋 コピー', 'success');
         }
       } else if (globalClipboard || ds2.clipboard) {
-        // 選択なし → 貼り付け
-        pasteObj(key);
+        // 選択なし → タップ位置に貼り付け
+        pasteObjAtPos(key, longPressTouchPos.nx, longPressTouchPos.ny);
       }
-    }, 700);
+    }, 400); // 400msに短縮
   };
+
   const onLongPressEnd = () => {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   };
+
   canvas.addEventListener('touchstart', onLongPressStart, { passive: true });
   canvas.addEventListener('touchend',   onLongPressEnd,   { passive: true });
   canvas.addEventListener('touchmove',  onLongPressEnd,   { passive: true });
@@ -2998,7 +3011,6 @@ function copySelected(key) {
 }
 
 function pasteObj(key) {
-  // グローバルクリップボード優先、なければローカル
   const src = globalClipboard || drawState[key]?.clipboard;
   if (!src) { showToast('コピーされた内容がありません','error'); return; }
   const ds = drawState[key];
@@ -3011,10 +3023,37 @@ function pasteObj(key) {
     x2: src.x2 + offset, y2: src.y2 + offset,
     rotation: src.rotation || 0
   };
+  if (!ds.history) ds.history = [];
+  ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+  if (ds.history.length > 50) ds.history.shift();
   ds.objects.push(newObj);
   ds.selectedId = newObj.id;
   renderSVGObjects(key);
-  showToast('📌 貼り付けました','success');
+  showToast('📌 貼り付け','success');
+}
+
+// タップ位置に貼り付け
+function pasteObjAtPos(key, nx, ny) {
+  const src = globalClipboard || drawState[key]?.clipboard;
+  if (!src) return;
+  const ds = drawState[key];
+  if (!ds) return;
+  const hw = (src.x2 - src.x1) / 2;
+  const hh = (src.y2 - src.y1) / 2;
+  const newObj = {
+    ...src,
+    id: Date.now(),
+    x1: nx - hw, y1: ny - hh,
+    x2: nx + hw, y2: ny + hh,
+    rotation: src.rotation || 0
+  };
+  if (!ds.history) ds.history = [];
+  ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+  if (ds.history.length > 50) ds.history.shift();
+  ds.objects.push(newObj);
+  ds.selectedId = newObj.id;
+  renderSVGObjects(key);
+  showToast('📌 貼り付け','success');
 }
 
 // ===== 回転 =====
