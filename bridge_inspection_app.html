@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.7</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.8</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3166,17 +3166,14 @@ async function saveWorkData() {
     // 作業データ（JSON）
     zip.file('作業データ.json', JSON.stringify(saveData));
 
-    // PDFを同梱（安全な分割変換）
+    // PDFをZIPに直接バイナリ格納（Base64変換を省略してメモリ節約）
     if (state.pdfData) {
       try {
-        showToast('📄 PDFを同梱中...', '');
-        const bytes = new Uint8Array(state.pdfData);
-        const chunkSize = 8192;
-        let binary = '';
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-        }
-        zip.file(`${state.pdfName || '前回調書'}.pdf`, btoa(binary), { base64: true });
+        showToast('📄 PDF同梱中...', '');
+        zip.file(
+          `${state.pdfName || '前回調書'}.pdf`,
+          state.pdfData  // ArrayBufferをそのまま渡す
+        );
       } catch(e) {
         console.warn('PDF同梱スキップ:', e);
       }
@@ -3380,14 +3377,14 @@ function importData(input) {
       const jsonStr = await jsonFile.async('string');
       const data    = JSON.parse(jsonStr);
 
-      // PDFを取得（ファイル名.pdfを探す）
-      let pdfBase64 = null;
+      // PDFを取得（バイナリで直接取得）
+      let pdfArrayBuffer = null;
       const pdfFiles = zip.file(/\.pdf$/i);
       if (pdfFiles.length > 0) {
-        pdfBase64 = await pdfFiles[0].async('base64');
+        pdfArrayBuffer = await pdfFiles[0].async('arraybuffer');
       }
 
-      await applyImportData(data, pdfBase64);
+      await applyImportData(data, null, pdfArrayBuffer);
     }).catch(err => {
       console.error(err);
       showToast('❌ ZIPファイルの読み込みに失敗しました', 'error');
@@ -3411,7 +3408,7 @@ function importData(input) {
 }
 
 // データ適用（ZIP・JSON共通）
-async function applyImportData(data, pdfBase64) {
+async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   if (!data.version || !data.photos) {
     showToast('❌ 対応していないファイル形式です', 'error');
     return;
@@ -3419,7 +3416,7 @@ async function applyImportData(data, pdfBase64) {
 
   const photoCount   = Object.keys(data.photos   || {}).length;
   const drawingCount = Object.keys(data.drawState || data.drawings || {}).length;
-  const hasPDF       = !!pdfBase64;
+  const hasPDF = !!(pdfArrayBuffer || pdfBase64);
 
   const ok = confirm(
     `📥 データを取り込みます\n\n` +
@@ -3464,15 +3461,17 @@ async function applyImportData(data, pdfBase64) {
     }
   }
 
-  // PDFを復元
-  if (pdfBase64) {
+  // PDFを復元（ArrayBuffer優先・Base64フォールバック）
+  if (pdfArrayBuffer || pdfBase64) {
     try {
       showToast('📄 PDFを復元中...', '');
-      const binary = atob(pdfBase64);
-      const bytes  = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const arrayBuffer = bytes.buffer;
-
+      let arrayBuffer = pdfArrayBuffer;
+      if (!arrayBuffer && pdfBase64) {
+        const binary = atob(pdfBase64);
+        const bytes  = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        arrayBuffer = bytes.buffer;
+      }
       state.pdfData    = arrayBuffer;
       const pdf        = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       state.pdfDoc     = pdf;
@@ -3481,8 +3480,6 @@ async function applyImportData(data, pdfBase64) {
       state.pageCache  = {};
       Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
       await detectPageStructure(pdf);
-
-      // UI更新
       document.getElementById('pdf-name').textContent  = state.pdfName + '.pdf';
       document.getElementById('pdf-pages').textContent = `${pdf.numPages} ページ`;
       document.getElementById('upload-zone').classList.add('hidden');
