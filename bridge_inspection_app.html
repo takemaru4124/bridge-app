@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.2</span> &nbsp;|&nbsp; 2026-05-09
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.3</span> &nbsp;|&nbsp; 2026-05-09
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1220,7 +1220,7 @@ async function loadPDF(input) {
   showToast('PDFを読み込んでいます...', '');
   try {
     const arrayBuffer = await file.arrayBuffer();
-    state.pdfData = arrayBuffer; // ← AirDrop共有用に保存
+    state.pdfData = arrayBuffer.slice(0); // ← 保存用コピー（PDF.jsがtransferするため）
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     state.pdfDoc = pdf;
     state.pdfName = file.name.replace('.pdf', '');
