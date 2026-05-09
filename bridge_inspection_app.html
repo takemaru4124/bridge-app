@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.4</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.5</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2211,18 +2211,20 @@ function setupDrawEvents(canvas, svg, key) {
   const container = canvas.parentElement;
 
   const getPos = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const src  = e.touches ? e.touches[0] : e;
-    const dpr  = window.devicePixelRatio || 1;
-    // canvas.widthはdpr考慮済みの実ピクセル数
-    // rect.widthはCSSズーム後の表示サイズ
-    // 正規化座標は rect基準で計算（0〜1）
-    const nx = (src.clientX - rect.left) / rect.width;
-    const ny = (src.clientY - rect.top)  / rect.height;
+    const rect  = canvas.getBoundingClientRect();
+    const src   = e.touches ? e.touches[0] : e;
+    const dpr   = window.devicePixelRatio || 1;
+    const scale = zoomScales[key] || 1;
+    // ズーム後のrect.widthをscaleで割って元のサイズ基準に戻す
+    const baseW = rect.width  / scale;
+    const baseH = rect.height / scale;
+    const relX  = (src.clientX - rect.left) / scale;
+    const relY  = (src.clientY - rect.top)  / scale;
     return {
-      x:  nx * canvas.width,
-      y:  ny * canvas.height,
-      nx, ny,
+      x:  relX * dpr,
+      y:  relY * dpr,
+      nx: relX / baseW,
+      ny: relY / baseH,
     };
   };
 
@@ -2575,8 +2577,8 @@ function renderSVGObjects(key) {
 
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class','svg-obj' + (isSel ? ' selected' : ''));
-    // 選択ツール時のみpointer-eventsを有効化
-    g.style.pointerEvents = ds.tool === 'select' ? 'auto' : 'none';
+    // タッチはcanvasで処理するためpointer-events:none（回転ハンドルは個別にauto）
+    g.style.pointerEvents = 'none';
 
     // 回転: オブジェクトの中心を軸に回転
     const rot = obj.rotation || 0;
@@ -2652,13 +2654,12 @@ function renderSVGObjects(key) {
       if (obj.pattern === 'solid') el.setAttribute('fill-opacity', fillOpacity);
       g.appendChild(el);
 
-      // ヒットエリア
+      // ヒットエリア（タッチはcanvasで処理するためpointer-events:none）
       const hit = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
       hit.setAttribute('cx',cx); hit.setAttribute('cy',cy);
       hit.setAttribute('rx',rx+8); hit.setAttribute('ry',ry2+8);
       hit.setAttribute('fill','transparent'); hit.setAttribute('stroke','transparent');
-      hit.style.cursor = 'pointer';
-      hit.addEventListener('click', () => { ds.selectedId = ds.selectedId===obj.id?null:obj.id; renderSVGObjects(key); });
+      hit.style.pointerEvents = 'none';
       g.appendChild(hit);
     }
 
