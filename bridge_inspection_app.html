@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.6</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.7</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -652,12 +652,12 @@
       <div style="padding:12px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;" onclick="document.getElementById('import-file-home').click()">
         <span style="font-size:28px;">📡</span>
         <div style="flex:1;">
-          <div style="font-size:13px;font-weight:700;">保存データ / 他のiPadからデータを取り込む</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:2px;">保存したJSONファイルを選択して再開</div>
+          <div style="font-size:13px;font-weight:700;">保存データを取り込んで再開</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px;">ZIPファイルを選択 → PDF・写真・書き込みが全て復元！</div>
         </div>
         <button style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;">取り込み</button>
       </div>
-      <input type="file" id="import-file-home" accept=".json" style="display:none" onchange="importData(this)">
+      <input type="file" id="import-file-home" accept=".zip,.json" style="display:none" onchange="importData(this)">
     </div>
   </div>
 </div>
@@ -707,7 +707,7 @@
         </div>
         <button class="download-btn">取り込み</button>
       </div>
-      <input type="file" id="import-file-input" accept=".json" style="display:none" onchange="importData(this)">
+      <input type="file" id="import-file-input" accept=".zip,.json" style="display:none" onchange="importData(this)">
       <div class="download-item" onclick="showSDCardModal()">
         <span class="download-item-icon">📷</span>
         <div class="download-item-body">
@@ -3136,6 +3136,7 @@ async function saveWorkData() {
         try { ds.savedPenData = canvas.toDataURL('image/png'); } catch(e) {}
       }
     }
+
     const drawStateExport = {};
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
@@ -3152,30 +3153,53 @@ async function saveWorkData() {
     }
 
     const saveData = {
-      version:    '1.3.5',
-      savedAt:    new Date().toISOString(),
-      pdfName:    state.pdfName || '橋梁点検',
-      photos:     state.photos  || {},
-      drawings:   state.drawings || {},
-      drawState:  drawStateExport,
+      version:   '1.4.6',
+      savedAt:   new Date().toISOString(),
+      pdfName:   state.pdfName || '橋梁点検',
+      photos:    state.photos  || {},
+      drawings:  state.drawings || {},
+      drawState: drawStateExport,
     };
 
-    const json     = JSON.stringify(saveData);
-    const blob     = new Blob([json], { type: 'application/json' });
-    const url      = URL.createObjectURL(blob);
-    const now      = new Date();
-    const dateStr  = `${now.getMonth()+1}${now.getDate()}_${now.getHours()}${String(now.getMinutes()).padStart(2,'0')}`;
-    const fileName = `${state.pdfName || '点検データ'}_保存_${dateStr}.json`;
-    const a        = document.createElement('a');
-    a.href         = url;
-    a.download     = fileName;
+    const zip = new JSZip();
+
+    // 作業データ（JSON）
+    zip.file('作業データ.json', JSON.stringify(saveData));
+
+    // PDFを同梱（安全な分割変換）
+    if (state.pdfData) {
+      try {
+        showToast('📄 PDFを同梱中...', '');
+        const bytes = new Uint8Array(state.pdfData);
+        const chunkSize = 8192;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        zip.file(`${state.pdfName || '前回調書'}.pdf`, btoa(binary), { base64: true });
+      } catch(e) {
+        console.warn('PDF同梱スキップ:', e);
+      }
+    }
+
+    const now     = new Date();
+    const dateStr = `${now.getMonth()+1}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+    const fileName = `${state.pdfName || '点検データ'}_作業保存_${dateStr}.zip`;
+
+    showToast('📦 ZIP生成中...', '');
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 3000);
 
     const photoCount = Object.keys(state.photos || {}).length;
-    showToast(`✅ 保存しました（写真${photoCount}枚）`, 'success');
+    const hasPDF     = !!state.pdfData;
+    showToast(`✅ 保存しました（写真${photoCount}枚${hasPDF ? '・PDF含む' : ''}）`, 'success');
 
   } catch(err) {
     console.error(err);
@@ -3344,126 +3368,144 @@ function importData(input) {
   const file = input.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    try {
-      const data = JSON.parse(e.target.result);
-      if (!data.version || !data.photos) {
-        showToast('❌ 対応していないファイル形式です', 'error');
-        return;
+  const isZip  = file.name.endsWith('.zip');
+  const isJson = file.name.endsWith('.json');
+
+  if (isZip) {
+    // ZIPファイルの場合
+    JSZip.loadAsync(file).then(async (zip) => {
+      // JSON取得
+      const jsonFile = zip.file('作業データ.json');
+      if (!jsonFile) { showToast('❌ 作業データが見つかりません', 'error'); return; }
+      const jsonStr = await jsonFile.async('string');
+      const data    = JSON.parse(jsonStr);
+
+      // PDFを取得（ファイル名.pdfを探す）
+      let pdfBase64 = null;
+      const pdfFiles = zip.file(/\.pdf$/i);
+      if (pdfFiles.length > 0) {
+        pdfBase64 = await pdfFiles[0].async('base64');
       }
 
-      const photoCount   = Object.keys(data.photos    || {}).length;
-      const drawingCount = Object.keys(data.drawState  || data.drawings || {}).length;
-
-      const ok = confirm(
-        `📥 データを取り込みます\n\n` +
-        `・撮影写真：${photoCount}枚\n` +
-        `・書き込みデータ：${drawingCount}ページ\n` +
-        `・橋梁名：${data.pdfName || '不明'}\n\n` +
-        `既存のデータに追加します。よろしいですか？`
-      );
-      if (!ok) return;
-
-      // 写真・書き込みを統合
-      Object.assign(state.photos,   data.photos   || {});
-      Object.assign(state.drawings, data.drawings  || {});
-
-      // PDFを復元（Base64→ArrayBuffer→PDF.js）
-      if (data.pdfBase64) {
-        try {
-          showToast('📄 PDFを復元中...', '');
-          const binary = atob(data.pdfBase64);
-          const bytes  = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const arrayBuffer = bytes.buffer;
-
-          state.pdfData = arrayBuffer;
-          const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          state.pdfDoc      = pdf;
-          state.pdfName     = data.pdfName || '引き継ぎデータ';
-          state.totalPages  = pdf.numPages;
-          state.pageCache   = {};
-          Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
-
-          await detectPageStructure(pdf);
-
-          // ホーム画面のUI更新
-          document.getElementById('pdf-name').textContent  = state.pdfName + '.pdf';
-          document.getElementById('pdf-pages').textContent = `${pdf.numPages} ページ`;
-          document.getElementById('upload-zone').classList.add('hidden');
-          document.getElementById('pdf-loaded-info').classList.remove('hidden');
-          document.getElementById('btn-survey').disabled  = false;
-          document.getElementById('btn-inspect').disabled = false;
-
-        } catch(pdfErr) {
-          console.error('PDF復元エラー:', pdfErr);
-          showToast('⚠️ PDF復元に失敗しました。手動でPDFを読み込んでください', 'error');
-        }
-      }
-
-      // drawStateを復元
-      if (data.drawState) {
-        for (const [key, ds] of Object.entries(data.drawState)) {
-          if (!drawState[key]) {
-            drawState[key] = {
-              tool: 'scroll', color: '#ef4444', sizeMM: 0.25, pattern: 'none',
-              penHistory: [], objects: [], selectedId: null, clipboard: null,
-              drawing: false, startX: 0, startY: 0, savedPenData: null
-            };
-          }
-          if (ds.objects && ds.objects.length > 0) {
-            const newObjs = ds.objects.map(obj => ({
-              ...obj, id: Date.now() + Math.random()
-            }));
-            drawState[key].objects.push(...newObjs);
-          }
-          if (ds.savedPenData && !drawState[key].savedPenData) {
-            drawState[key].savedPenData = ds.savedPenData;
-          }
-          renderSVGObjects(key);
-          if (ds.savedPenData) {
-            const canvas = document.getElementById(`drawcanvas-${key}`);
-            if (canvas) {
-              const img = new Image();
-              img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-              img.src = ds.savedPenData;
-            }
-          }
-        }
-      }
-
-      showToast(`✅ 写真${photoCount}枚・書き込み${drawingCount}ページを取り込みました`, 'success');
-
-      const hasPDF = !!data.pdfBase64;
-
-      // トップ画面から取り込んだ場合
-      if (currentScreen === 'home' && !hasPDF) {
-        setTimeout(() => {
-          alert(
-            `✅ データの取り込みが完了しました！\n\n` +
-            `次に前回点検調書のPDFを\n` +
-            `読み込んでください。`
-          );
-        }, 500);
-      } else if (currentScreen === 'home' && hasPDF) {
-        setTimeout(() => {
-          alert(
-            `✅ データの取り込みが完了しました！\n\n` +
-            `PDFも自動で読み込みました。\n` +
-            `「踏査」または「本調査」を\n` +
-            `タップして開始してください！`
-          );
-        }, 800);
-      }
-
-    } catch(err) {
+      await applyImportData(data, pdfBase64);
+    }).catch(err => {
       console.error(err);
-      showToast('❌ ファイルの読み込みに失敗しました', 'error');
-    }
-  };
-  reader.readAsText(file);
+      showToast('❌ ZIPファイルの読み込みに失敗しました', 'error');
+    });
+  } else if (isJson) {
+    // JSONファイルの場合（旧形式対応）
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        await applyImportData(data, data.pdfBase64 || null);
+      } catch(err) {
+        showToast('❌ ファイルの読み込みに失敗しました', 'error');
+      }
+    };
+    reader.readAsText(file);
+  } else {
+    showToast('❌ ZIPまたはJSONファイルを選択してください', 'error');
+  }
   input.value = '';
+}
+
+// データ適用（ZIP・JSON共通）
+async function applyImportData(data, pdfBase64) {
+  if (!data.version || !data.photos) {
+    showToast('❌ 対応していないファイル形式です', 'error');
+    return;
+  }
+
+  const photoCount   = Object.keys(data.photos   || {}).length;
+  const drawingCount = Object.keys(data.drawState || data.drawings || {}).length;
+  const hasPDF       = !!pdfBase64;
+
+  const ok = confirm(
+    `📥 データを取り込みます\n\n` +
+    `・橋梁名：${data.pdfName || '不明'}\n` +
+    `・撮影写真：${photoCount}枚\n` +
+    `・書き込みデータ：${drawingCount}ページ\n` +
+    `・PDF：${hasPDF ? '含む（自動復元）' : 'なし'}\n\n` +
+    `よろしいですか？`
+  );
+  if (!ok) return;
+
+  // 写真・書き込みを統合
+  Object.assign(state.photos,   data.photos   || {});
+  Object.assign(state.drawings, data.drawings  || {});
+
+  // drawStateを復元
+  if (data.drawState) {
+    for (const [key, ds] of Object.entries(data.drawState)) {
+      if (!drawState[key]) {
+        drawState[key] = {
+          tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
+          penHistory:[], objects:[], selectedId:null, clipboard:null,
+          drawing:false, startX:0, startY:0, savedPenData:null, history:[]
+        };
+      }
+      if (ds.objects?.length > 0) {
+        const newObjs = ds.objects.map(o => ({...o, id: Date.now() + Math.random()}));
+        drawState[key].objects.push(...newObjs);
+      }
+      if (ds.savedPenData && !drawState[key].savedPenData) {
+        drawState[key].savedPenData = ds.savedPenData;
+      }
+      renderSVGObjects(key);
+      if (ds.savedPenData) {
+        const canvas = document.getElementById(`drawcanvas-${key}`);
+        if (canvas) {
+          const img = new Image();
+          img.onload = () => canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          img.src = ds.savedPenData;
+        }
+      }
+    }
+  }
+
+  // PDFを復元
+  if (pdfBase64) {
+    try {
+      showToast('📄 PDFを復元中...', '');
+      const binary = atob(pdfBase64);
+      const bytes  = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const arrayBuffer = bytes.buffer;
+
+      state.pdfData    = arrayBuffer;
+      const pdf        = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      state.pdfDoc     = pdf;
+      state.pdfName    = data.pdfName || '引き継ぎデータ';
+      state.totalPages = pdf.numPages;
+      state.pageCache  = {};
+      Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
+      await detectPageStructure(pdf);
+
+      // UI更新
+      document.getElementById('pdf-name').textContent  = state.pdfName + '.pdf';
+      document.getElementById('pdf-pages').textContent = `${pdf.numPages} ページ`;
+      document.getElementById('upload-zone').classList.add('hidden');
+      document.getElementById('pdf-loaded-info').classList.remove('hidden');
+      document.getElementById('btn-survey').disabled  = false;
+      document.getElementById('btn-inspect').disabled = false;
+    } catch(e) {
+      console.error('PDF復元エラー:', e);
+      showToast('⚠️ PDF復元失敗。手動でPDFを読み込んでください', 'error');
+    }
+  }
+
+  showToast(`✅ 写真${photoCount}枚・書き込み${drawingCount}ページを取り込みました`, 'success');
+
+  if (currentScreen === 'home' && hasPDF) {
+    setTimeout(() => {
+      alert('✅ 取り込み完了！\n\nPDFも自動で読み込みました。\n「踏査」または「本調査」をタップして\n作業を再開してください！');
+    }, 800);
+  } else if (currentScreen === 'home' && !hasPDF) {
+    setTimeout(() => {
+      alert('✅ 取り込み完了！\n\n次に前回調書のPDFを読み込んでください。');
+    }, 500);
+  }
 }
 
 // ===== Wi-Fi SDカード連携 =====
