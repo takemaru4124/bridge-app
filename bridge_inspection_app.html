@@ -630,7 +630,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.8</span> &nbsp;|&nbsp; 2025-04-27
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.4.9</span> &nbsp;|&nbsp; 2025-04-27
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3163,8 +3163,8 @@ async function saveWorkData() {
 
     const zip = new JSZip();
 
-    // 作業データ（JSON）
-    zip.file('作業データ.json', JSON.stringify(saveData));
+    // 作業データ（JSON）- 英語ファイル名で確実に保存
+    zip.file('work_data.json', JSON.stringify(saveData));
 
     // PDFをZIPに直接バイナリ格納（Base64変換を省略してメモリ節約）
     if (state.pdfData) {
@@ -3369,15 +3369,21 @@ function importData(input) {
   const isJson = file.name.endsWith('.json');
 
   if (isZip) {
-    // ZIPファイルの場合
     JSZip.loadAsync(file).then(async (zip) => {
-      // JSON取得
-      const jsonFile = zip.file('作業データ.json');
+      // JSONファイルを探す（新形式・旧形式両対応）
+      let jsonFile = zip.file('work_data.json');
+      if (!jsonFile) jsonFile = zip.file('作業データ.json');
+      if (!jsonFile) {
+        // JSON拡張子のファイルを探す
+        const jsonFiles = zip.file(/\.json$/i);
+        if (jsonFiles.length > 0) jsonFile = jsonFiles[0];
+      }
       if (!jsonFile) { showToast('❌ 作業データが見つかりません', 'error'); return; }
+
       const jsonStr = await jsonFile.async('string');
       const data    = JSON.parse(jsonStr);
 
-      // PDFを取得（バイナリで直接取得）
+      // PDFを取得
       let pdfArrayBuffer = null;
       const pdfFiles = zip.file(/\.pdf$/i);
       if (pdfFiles.length > 0) {
