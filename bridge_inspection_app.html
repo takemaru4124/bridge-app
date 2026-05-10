@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.5</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.6</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2102,11 +2102,13 @@ function startResizeHandle(e, key, handleType) {
   const baseW  = rect.width  / scale;
   const baseH  = rect.height / scale;
 
-  // オブジェクトの初期状態を保持（正規化座標）
-  let ox1 = Math.min(obj.x1, obj.x2);
-  let oy1 = Math.min(obj.y1, obj.y2);
-  let ox2 = Math.max(obj.x1, obj.x2);
-  let oy2 = Math.max(obj.y1, obj.y2);
+  // 開始時のオブジェクト座標を正規化して固定（固定辺の基準）
+  const ox1 = Math.min(obj.x1, obj.x2);
+  const oy1 = Math.min(obj.y1, obj.y2);
+  const ox2 = Math.max(obj.x1, obj.x2);
+  const oy2 = Math.max(obj.y1, obj.y2);
+  // 縦横比（四隅用）：開始時に1度だけ計算して固定
+  const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
 
   const getPos = (ev) => {
     const src = ev.touches ? ev.touches[0] : ev;
@@ -2115,71 +2117,77 @@ function startResizeHandle(e, key, handleType) {
     return { nx: relX / baseW, ny: relY / baseH };
   };
 
-  const onMove = (ev) => {
-    ev.preventDefault();
-    const pos = getPos(ev);
-    const nx = pos.nx, ny = pos.ny;
-    const MIN = 0.02; // 最小サイズ（正規化）
+  const MIN = 0.015; // 最小サイズ（正規化）
+  let rafId = null;
+  let latestNx = 0, latestNy = 0;
 
-    // 四隅：縦横比固定リサイズ
-    if (handleType === 'tl') {
-      const newW = ox2 - nx;
-      const newH = oy2 - ny;
-      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
-      if (newW > MIN && newH > MIN) {
-        const w = Math.max(newW, newH * aspect);
+  // 実際の描画更新（RAF内で実行）
+  const applyResize = () => {
+    rafId = null;
+    const nx = latestNx, ny = latestNy;
+
+    switch (handleType) {
+      // 四隅：縦横比固定（固定辺は開始時の対角）
+      case 'tl': {
+        const w = Math.max(ox2 - nx, MIN);
         const h = w / aspect;
-        obj.x1 = ox2 - w; obj.y1 = oy2 - h;
-        obj.x2 = ox2;     obj.y2 = oy2;
+        obj.x1 = ox2 - w; obj.y1 = oy2 - h; obj.x2 = ox2; obj.y2 = oy2;
+        break;
       }
-    } else if (handleType === 'tr') {
-      const newW = nx - ox1;
-      const newH = oy2 - ny;
-      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
-      if (newW > MIN && newH > MIN) {
-        const w = Math.max(newW, newH * aspect);
+      case 'tr': {
+        const w = Math.max(nx - ox1, MIN);
         const h = w / aspect;
-        obj.x1 = ox1;     obj.y1 = oy2 - h;
-        obj.x2 = ox1 + w; obj.y2 = oy2;
+        obj.x1 = ox1; obj.y1 = oy2 - h; obj.x2 = ox1 + w; obj.y2 = oy2;
+        break;
       }
-    } else if (handleType === 'bl') {
-      const newW = ox2 - nx;
-      const newH = ny - oy1;
-      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
-      if (newW > MIN && newH > MIN) {
-        const w = Math.max(newW, newH * aspect);
+      case 'bl': {
+        const w = Math.max(ox2 - nx, MIN);
         const h = w / aspect;
-        obj.x1 = ox2 - w; obj.y1 = oy1;
-        obj.x2 = ox2;     obj.y2 = oy1 + h;
+        obj.x1 = ox2 - w; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy1 + h;
+        break;
       }
-    } else if (handleType === 'br') {
-      const newW = nx - ox1;
-      const newH = ny - oy1;
-      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
-      if (newW > MIN && newH > MIN) {
-        const w = Math.max(newW, newH * aspect);
+      case 'br': {
+        const w = Math.max(nx - ox1, MIN);
         const h = w / aspect;
-        obj.x1 = ox1;     obj.y1 = oy1;
-        obj.x2 = ox1 + w; obj.y2 = oy1 + h;
+        obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox1 + w; obj.y2 = oy1 + h;
+        break;
       }
-    // 辺中央：幅 or 高さのみ伸縮
-    } else if (handleType === 'tc') {
-      const newH = oy2 - ny;
-      if (newH > MIN) { obj.x1 = ox1; obj.y1 = oy2 - newH; obj.x2 = ox2; obj.y2 = oy2; }
-    } else if (handleType === 'bc') {
-      const newH = ny - oy1;
-      if (newH > MIN) { obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy1 + newH; }
-    } else if (handleType === 'ml') {
-      const newW = ox2 - nx;
-      if (newW > MIN) { obj.x1 = ox2 - newW; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy2; }
-    } else if (handleType === 'mr') {
-      const newW = nx - ox1;
-      if (newW > MIN) { obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox1 + newW; obj.y2 = oy2; }
+      // 辺中央：幅 or 高さのみ伸縮（反対辺は固定）
+      case 'tc': {
+        const h = Math.max(oy2 - ny, MIN);
+        obj.x1 = ox1; obj.y1 = oy2 - h; obj.x2 = ox2; obj.y2 = oy2;
+        break;
+      }
+      case 'bc': {
+        const h = Math.max(ny - oy1, MIN);
+        obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy1 + h;
+        break;
+      }
+      case 'ml': {
+        const w = Math.max(ox2 - nx, MIN);
+        obj.x1 = ox2 - w; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy2;
+        break;
+      }
+      case 'mr': {
+        const w = Math.max(nx - ox1, MIN);
+        obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox1 + w; obj.y2 = oy2;
+        break;
+      }
     }
     renderSVGObjects(key);
   };
 
+  const onMove = (ev) => {
+    ev.preventDefault();
+    const pos = getPos(ev);
+    latestNx = pos.nx;
+    latestNy = pos.ny;
+    // RAFで間引き：前フレームがまだ処理中なら新たにリクエストしない
+    if (!rafId) rafId = requestAnimationFrame(applyResize);
+  };
+
   const onEnd = () => {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend',  onEnd);
     window.removeEventListener('mousemove', onMove);
@@ -2801,7 +2809,7 @@ function renderSVGObjects(key) {
         // 透明ヒットエリア（タップしやすく）
         const hitCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
         hitCircle.setAttribute('cx', h.x); hitCircle.setAttribute('cy', h.y);
-        hitCircle.setAttribute('r', 18);
+        hitCircle.setAttribute('r', 24);
         hitCircle.setAttribute('fill', 'transparent');
         hg.appendChild(hitCircle);
 
