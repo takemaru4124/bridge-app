@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.1</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.2</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2235,6 +2235,123 @@ function startResizeHandle(e, key, handleType) {
   window.addEventListener('mouseup',   onEnd);
 }
 
+// ===== 選択ペンストロークのSVGハイライト =====
+function renderSelectedPenStrokes(key) {
+  const ds = drawState[key];
+  const svg = document.getElementById(`drawsvg-${key}`);
+  if (!svg || !ds) return;
+
+  // 既存のペンハイライトを削除
+  svg.querySelectorAll('.pen-highlight').forEach(el => el.remove());
+
+  const ids = ds.selectedPenIds || [];
+  if (ids.length === 0) return;
+
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!canvas) return;
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+
+  ids.forEach(id => {
+    const stroke = (ds.penStrokes||[]).find(s => s.id === id);
+    if (!stroke || stroke.points.length < 2) return;
+
+    const pts = stroke.points.map(p => `${p.nx*W},${p.ny*H}`).join(' ');
+    const pl = document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    pl.setAttribute('points', pts);
+    pl.setAttribute('fill', 'none');
+    pl.setAttribute('stroke', '#60d0ff');
+    pl.setAttribute('stroke-width', mmToPx(stroke.sizeMM||0.25, 1) + 4);
+    pl.setAttribute('stroke-linecap', 'round');
+    pl.setAttribute('stroke-linejoin', 'round');
+    pl.setAttribute('opacity', '0.6');
+    pl.classList.add('pen-highlight');
+    pl.style.pointerEvents = 'none';
+    svg.appendChild(pl);
+  });
+}
+
+// ===== ペンストローク：移動 =====
+function movePenStrokes(key, dx, dy) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedPenIds?.length) return;
+  ds.penStrokes.forEach(s => {
+    if (!ds.selectedPenIds.includes(s.id)) return;
+    s.points = s.points.map(p => ({nx: p.nx+dx, ny: p.ny+dy}));
+    if (s.bbox) { s.bbox.x1+=dx; s.bbox.y1+=dy; s.bbox.x2+=dx; s.bbox.y2+=dy; }
+  });
+}
+
+// ===== ペンストローク：Canvas再描画 =====
+function redrawPenStrokes(key) {
+  const ds = drawState[key];
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  if (!ds || !canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.clearRect(0, 0, W, H);
+  (ds.penStrokes||[]).forEach(s => {
+    if (s.points.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = s.color || '#ef4444';
+    ctx.lineWidth   = mmToPx(s.sizeMM||0.25, dpr);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.moveTo(s.points[0].nx * canvas.offsetWidth * dpr, s.points[0].ny * canvas.offsetHeight * dpr);
+    s.points.slice(1).forEach(p => ctx.lineTo(p.nx * canvas.offsetWidth * dpr, p.ny * canvas.offsetHeight * dpr));
+    ctx.stroke();
+  });
+  ds.savedPenData = canvas.toDataURL('image/png');
+}
+
+// ===== ペンストローク：削除 =====
+function deletePenStrokes(key) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedPenIds?.length) return;
+  // Undo用保存
+  if (!ds.history) ds.history = [];
+  ds.history.push({ type:'pen', penData: document.getElementById(`drawcanvas-${key}`)?.toDataURL(), penStrokes: ds.penStrokes.map(s=>({...s,points:[...s.points]})) });
+  ds.penStrokes = ds.penStrokes.filter(s => !ds.selectedPenIds.includes(s.id));
+  ds.selectedPenIds = [];
+  redrawPenStrokes(key);
+  renderSelectedPenStrokes(key);
+}
+
+// ===== ペンストローク：コピー =====
+function copyPenStrokes(key) {
+  const ds = drawState[key];
+  if (!ds || !ds.selectedPenIds?.length) return;
+  const selected = ds.penStrokes.filter(s => ds.selectedPenIds.includes(s.id));
+  ds.clipboardPen = selected.map(s => ({...s, points:[...s.points]}));
+  globalClipboardPen = ds.clipboardPen;
+}
+
+// ===== ペンストローク：貼り付け =====
+function pastePenStrokes(key) {
+  const ds = drawState[key];
+  const src = globalClipboardPen || ds?.clipboardPen;
+  if (!ds || !src?.length) return;
+  const offset = 0.03;
+  if (!ds.history) ds.history = [];
+  ds.history.push({ type:'pen', penData: document.getElementById(`drawcanvas-${key}`)?.toDataURL(), penStrokes: ds.penStrokes.map(s=>({...s,points:[...s.points]})) });
+  const newStrokes = src.map(s => ({
+    ...s,
+    id: Date.now() + Math.random(),
+    points: s.points.map(p => ({nx:p.nx+offset, ny:p.ny+offset})),
+    bbox: s.bbox ? {x1:s.bbox.x1+offset,y1:s.bbox.y1+offset,x2:s.bbox.x2+offset,y2:s.bbox.y2+offset} : null
+  }));
+  ds.penStrokes.push(...newStrokes);
+  ds.selectedPenIds = newStrokes.map(s=>s.id);
+  ds.selectedIds = [];
+  ds.selectedId = null;
+  redrawPenStrokes(key);
+  renderSVGObjects(key);
+  renderSelectedPenStrokes(key);
+}
+
+let globalClipboardPen = null;
+
 // ===== 描画エンジン =====
 // drawState[key] = {
 //   tool: 'pen'|'line'|'arrow'|'select'|'eraser'
@@ -2293,7 +2410,7 @@ function setupDrawCanvas(key, imgData) {
     if (!drawState[key]) {
       drawState[key] = {
         tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
-        penHistory:[], objects:[], selectedId:null, clipboard:null,
+        penHistory:[], penStrokes:[], objects:[], selectedId:null, clipboard:null,
         drawing:false, startX:0, startY:0, savedPenData:null
       };
     }
@@ -2419,10 +2536,13 @@ function setupDrawEvents(canvas, svg, key) {
       }
       // 統合履歴に記録（ペン）
       if (!ds.history) ds.history = [];
-      ds.history.push({ type: 'pen', penData: canvas.toDataURL() });
+      ds.history.push({ type: 'pen', penData: canvas.toDataURL(), penStrokes: (ds.penStrokes||[]).map(s=>({...s,points:[...s.points]})) });
       if (ds.history.length > 30) ds.history.shift();
       ds.penHistory.push(canvas.toDataURL());
       if (ds.penHistory.length > 30) ds.penHistory.shift();
+      // ストローク開始
+      if (!ds.penStrokes) ds.penStrokes = [];
+      ds._currentStroke = { id: Date.now(), color: ds.color, sizeMM: ds.sizeMM, points: [{nx:pos.nx, ny:pos.ny}] };
       const ctx = canvas.getContext('2d');
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
@@ -2461,6 +2581,14 @@ function setupDrawEvents(canvas, svg, key) {
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
+      // ストローク座標を記録（間引き：前点から一定距離以上の場合のみ）
+      if (ds._currentStroke) {
+        const pts = ds._currentStroke.points;
+        const last = pts[pts.length-1];
+        if (!last || Math.hypot(pos.nx-last.nx, pos.ny-last.ny) > 0.003) {
+          pts.push({nx:pos.nx, ny:pos.ny});
+        }
+      }
       // 確実に画面に反映
       requestAnimationFrame(() => {});
     } else if (ds.tool === 'eraser') {
@@ -2500,6 +2628,13 @@ function setupDrawEvents(canvas, svg, key) {
         ds.startX = pos.nx; ds.startY = pos.ny;
         renderSVGObjects(key);
       }
+    } else if (ds.tool === 'select' && !ds.selectedId && ds.selectedPenIds?.length) {
+      // ペンストロークのみ選択時の移動
+      const dx = pos.nx - ds.startX;
+      const dy = pos.ny - ds.startY;
+      movePenStrokes(key, dx, dy);
+      ds.startX = pos.nx; ds.startY = pos.ny;
+      renderSelectedPenStrokes(key);
     } else if (ds.tool === 'select' && ds.selectedIds && ds.selectedIds.length > 1) {
       // 複数選択オブジェクトを一括移動
       const dx = pos.nx - ds.startX;
@@ -2510,6 +2645,11 @@ function setupDrawEvents(canvas, svg, key) {
           obj.x2 += dx; obj.y2 += dy;
         }
       });
+      // 選択ペンストロークも一緒に移動
+      if (ds.selectedPenIds?.length) {
+        movePenStrokes(key, dx, dy);
+        renderSelectedPenStrokes(key);
+      }
       ds.startX = pos.nx; ds.startY = pos.ny;
       renderSVGObjects(key);
     }
@@ -2521,6 +2661,22 @@ function setupDrawEvents(canvas, svg, key) {
     const ds = drawState[key];
     if (!ds.drawing) return;
     ds.drawing = false;
+
+    // ペンストローク確定
+    if (ds.tool === 'pen' && ds._currentStroke) {
+      const pts = ds._currentStroke.points;
+      if (pts.length >= 2) {
+        const nxArr = pts.map(p=>p.nx), nyArr = pts.map(p=>p.ny);
+        const pad = 0.01;
+        ds._currentStroke.bbox = {
+          x1: Math.min(...nxArr)-pad, y1: Math.min(...nyArr)-pad,
+          x2: Math.max(...nxArr)+pad, y2: Math.max(...nyArr)+pad
+        };
+        if (!ds.penStrokes) ds.penStrokes = [];
+        ds.penStrokes.push(ds._currentStroke);
+      }
+      ds._currentStroke = null;
+    }
 
     // 範囲選択確定
     if (ds.tool === 'select' && ds.isRangeSelect) {
@@ -2534,22 +2690,30 @@ function setupDrawEvents(canvas, svg, key) {
       if (dragDist < 0.02) {
         ds.selectedId  = null;
         ds.selectedIds = [];
+        ds.selectedPenIds = [];
         clearPreviewLine(key);
         renderSVGObjects(key);
         return;
       }
-      // 範囲内のオブジェクトを全選択
+      // 範囲内のSVGオブジェクトを全選択
       const inRange = ds.objects.filter(obj => {
         const ox1 = Math.min(obj.x1, obj.x2), oy1 = Math.min(obj.y1, obj.y2);
         const ox2 = Math.max(obj.x1, obj.x2), oy2 = Math.max(obj.y1, obj.y2);
         return ox1 >= x1 && oy1 >= y1 && ox2 <= x2 && oy2 <= y2;
       });
-      // 複数選択: selectedIdsに保存
-      ds.selectedIds = inRange.map(o => o.id);
-      ds.selectedId  = inRange.length === 1 ? inRange[0].id : null;
+      // 範囲内のペンストロークも選択
+      const inRangePen = (ds.penStrokes||[]).filter(s => {
+        const b = s.bbox;
+        return b && b.x1 >= x1 && b.y1 >= y1 && b.x2 <= x2 && b.y2 <= y2;
+      });
+      ds.selectedIds    = inRange.map(o => o.id);
+      ds.selectedPenIds = inRangePen.map(s => s.id);
+      ds.selectedId     = inRange.length === 1 && inRangePen.length === 0 ? inRange[0].id : null;
       clearPreviewLine(key);
       renderSVGObjects(key);
-      if (inRange.length > 0) showToast(`${inRange.length}個のオブジェクトを選択`, 'success');
+      renderSelectedPenStrokes(key);
+      const total = inRange.length + inRangePen.length;
+      if (total > 0) showToast(`${total}個を選択`, 'success');
       return;
     }
     ds.isRangeSelect = false;
@@ -2608,6 +2772,11 @@ function setupDrawEvents(canvas, svg, key) {
       }
       clearPreviewLine(key);
       renderSVGObjects(key);
+    }
+    // ペンストロークの移動が完了したらCanvas再描画
+    if (ds.tool === 'select' && ds.selectedPenIds?.length) {
+      redrawPenStrokes(key);
+      renderSelectedPenStrokes(key);
     }
   };
 
@@ -3168,6 +3337,12 @@ function undoDraw(key) {
       img.src = last.penData;
     }
     ds.savedPenData = last.penData;
+    // penStrokesも復元
+    if (last.penStrokes) {
+      ds.penStrokes = last.penStrokes.map(s=>({...s,points:[...s.points]}));
+    }
+    ds.selectedPenIds = [];
+    renderSelectedPenStrokes(key);
   }
 }
 
@@ -3178,6 +3353,11 @@ let globalClipboard = null;
 
 function deleteSelected(key) {
   const ds = drawState[key];
+  // ペンストロークが選択されている場合
+  if (ds?.selectedPenIds?.length) {
+    deletePenStrokes(key);
+    if (!ds.selectedId) { showToast('削除しました',''); return; }
+  }
   if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
   ds.objects = ds.objects.filter(o => o.id !== ds.selectedId);
   ds.selectedId = null;
@@ -3324,9 +3504,10 @@ async function saveWorkData() {
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
       if (!ds) continue;
-      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData) {
+      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData || ds.penStrokes?.length > 0) {
         drawStateExport[key] = {
           objects:      ds.objects      || [],
+          penStrokes:   ds.penStrokes   || [],
           savedPenData: ds.savedPenData || null,
           color:        ds.color,
           sizeMM:       ds.sizeMM,
@@ -3431,9 +3612,10 @@ async function exportForAirDrop() {
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
       if (!ds) continue;
-      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData) {
+      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData || ds.penStrokes?.length > 0) {
         drawStateExport[key] = {
           objects:      ds.objects      || [],
+          penStrokes:   ds.penStrokes   || [],
           savedPenData: ds.savedPenData || null,
           color:        ds.color,
           sizeMM:       ds.sizeMM,
@@ -3655,13 +3837,18 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
       if (!drawState[key]) {
         drawState[key] = {
           tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
-          penHistory:[], objects:[], selectedId:null, clipboard:null,
+          penHistory:[], penStrokes:[], objects:[], selectedId:null, clipboard:null,
           drawing:false, startX:0, startY:0, savedPenData:null, history:[]
         };
       }
       if (ds.objects?.length > 0) {
         const newObjs = ds.objects.map(o => ({...o, id: Date.now() + Math.random()}));
         drawState[key].objects.push(...newObjs);
+      }
+      if (ds.penStrokes?.length > 0) {
+        if (!drawState[key].penStrokes) drawState[key].penStrokes = [];
+        const newStrokes = ds.penStrokes.map(s => ({...s, id: Date.now()+Math.random(), points:[...s.points]}));
+        drawState[key].penStrokes.push(...newStrokes);
       }
       if (ds.savedPenData && !drawState[key].savedPenData) {
         drawState[key].savedPenData = ds.savedPenData;
