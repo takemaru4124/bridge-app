@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.0</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.1</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2529,6 +2529,15 @@ function setupDrawEvents(canvas, svg, key) {
       const y1 = Math.min(ds.startY, ds.lastY ?? ds.startY);
       const x2 = Math.max(ds.startX, ds.lastX ?? ds.startX);
       const y2 = Math.max(ds.startY, ds.lastY ?? ds.startY);
+      const dragDist = Math.hypot(x2 - x1, y2 - y1);
+      // タップ（ほぼ動いていない）→ 選択解除のみ
+      if (dragDist < 0.02) {
+        ds.selectedId  = null;
+        ds.selectedIds = [];
+        clearPreviewLine(key);
+        renderSVGObjects(key);
+        return;
+      }
       // 範囲内のオブジェクトを全選択
       const inRange = ds.objects.filter(obj => {
         const ox1 = Math.min(obj.x1, obj.x2), oy1 = Math.min(obj.y1, obj.y2);
