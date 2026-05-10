@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.6</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.7</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2112,15 +2112,57 @@ function startEndpointHandle(e, key, objId, point) {
 
   const applyMove = () => {
     rafId = null;
-    // 他オブジェクトの端点にスナップ
     const snapped = snapToEndpoints(latestNx, latestNy, ds.objects, objId);
     const nx = snapped.nx, ny = snapped.ny;
     if (point === 'p1') { obj.x1 = nx; obj.y1 = ny; }
     else                { obj.x2 = nx; obj.y2 = ny; }
-    // スナップインジケーター
     if (snapped.snapped) showSnapIndicator(key, '端点');
     else hideSnapIndicator(key);
-    renderSVGObjects(key);
+
+    // 軽量DOM更新（innerHTML不使用）
+    const canvas = document.getElementById(`drawcanvas-${key}`);
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    const px1 = obj.x1*W, py1 = obj.y1*H, px2 = obj.x2*W, py2 = obj.y2*H;
+    const svg = document.getElementById(`drawsvg-${key}`);
+    if (!svg) { renderSVGObjects(key); return; }
+    const selG = svg.querySelector('.svg-obj.selected');
+    if (!selG) { renderSVGObjects(key); return; }
+
+    // 線本体を更新
+    const lineEl = selG.querySelector('line');
+    if (lineEl) {
+      lineEl.setAttribute('x1', px1); lineEl.setAttribute('y1', py1);
+      lineEl.setAttribute('x2', px2); lineEl.setAttribute('y2', py2);
+    }
+    // 選択ハイライト点線を更新
+    const lines = selG.querySelectorAll('line');
+    lines.forEach(l => {
+      if (l.getAttribute('stroke-dasharray')) {
+        l.setAttribute('x1', px1); l.setAttribute('y1', py1);
+        l.setAttribute('x2', px2); l.setAttribute('y2', py2);
+      }
+    });
+    // 矢印ヘッドを更新
+    const arrEl = selG.querySelector('polyline');
+    if (arrEl && obj.type === 'arrow') {
+      const sw = mmToPx(obj.sizeMM, 1);
+      const angle = Math.atan2(py2-py1, px2-px1);
+      const al = Math.max(sw*4, 10);
+      arrEl.setAttribute('points',
+        `${px2-al*Math.cos(angle-0.4)},${py2-al*Math.sin(angle-0.4)} ${px2},${py2} ${px2-al*Math.cos(angle+0.4)},${py2-al*Math.sin(angle+0.4)}`
+      );
+    }
+    // 端点ハンドルの◆を更新
+    const hgs = selG.querySelectorAll('g');
+    const pts = [[px1,py1],[px2,py2]];
+    hgs.forEach((hg, i) => {
+      if (!pts[i]) return;
+      const [hx, hy] = pts[i];
+      const c = hg.querySelector('circle');
+      const d = hg.querySelector('rect');
+      if (c) { c.setAttribute('cx', hx); c.setAttribute('cy', hy); }
+      if (d) { d.setAttribute('x', hx-6); d.setAttribute('y', hy-6); d.setAttribute('transform', `rotate(45 ${hx} ${hy})`); }
+    });
   };
 
   const onMove = (ev) => {
