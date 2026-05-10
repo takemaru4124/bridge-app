@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.8</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.9</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2180,7 +2180,7 @@ function startResizeHandle(e, key, handleType) {
       const circle = hg.querySelector('circle');
       if (circle) { circle.setAttribute('cx',hx); circle.setAttribute('cy',hy); }
       const dot = hg.querySelector('rect');
-      if (dot) { dot.setAttribute('x',hx-7); dot.setAttribute('y',hy-7); dot.setAttribute('transform',`rotate(45 ${hx} ${hy})`); }
+      if (dot) { dot.setAttribute('x',hx-5); dot.setAttribute('y',hy-5); dot.setAttribute('transform',`rotate(45 ${hx} ${hy})`); }
     });
 
     // 回転ハンドルも位置更新
@@ -2851,7 +2851,7 @@ function renderSVGObjects(key) {
 
         // 見た目：四隅=塗りつぶし◆、辺=白抜き◇
         const dot = document.createElementNS('http://www.w3.org/2000/svg','rect');
-        const ds2 = 7; // 半辺
+        const ds2 = 5; // 半辺
         dot.setAttribute('x', h.x - ds2); dot.setAttribute('y', h.y - ds2);
         dot.setAttribute('width', ds2*2); dot.setAttribute('height', ds2*2);
         dot.setAttribute('rx', 2);
