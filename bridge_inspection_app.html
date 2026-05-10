@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.6</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.7</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2121,60 +2121,93 @@ function startResizeHandle(e, key, handleType) {
   let rafId = null;
   let latestNx = 0, latestNy = 0;
 
+  // 座標計算のみ（DOM触らず）
+  const calcNewCoords = (nx, ny) => {
+    switch (handleType) {
+      case 'tl': { const w=Math.max(ox2-nx,MIN); const h=w/aspect; return {x1:ox2-w,y1:oy2-h,x2:ox2,y2:oy2}; }
+      case 'tr': { const w=Math.max(nx-ox1,MIN); const h=w/aspect; return {x1:ox1,y1:oy2-h,x2:ox1+w,y2:oy2}; }
+      case 'bl': { const w=Math.max(ox2-nx,MIN); const h=w/aspect; return {x1:ox2-w,y1:oy1,x2:ox2,y2:oy1+h}; }
+      case 'br': { const w=Math.max(nx-ox1,MIN); const h=w/aspect; return {x1:ox1,y1:oy1,x2:ox1+w,y2:oy1+h}; }
+      case 'tc': { const h=Math.max(oy2-ny,MIN); return {x1:ox1,y1:oy2-h,x2:ox2,y2:oy2}; }
+      case 'bc': { const h=Math.max(ny-oy1,MIN); return {x1:ox1,y1:oy1,x2:ox2,y2:oy1+h}; }
+      case 'ml': { const w=Math.max(ox2-nx,MIN); return {x1:ox2-w,y1:oy1,x2:ox2,y2:oy2}; }
+      case 'mr': { const w=Math.max(nx-ox1,MIN); return {x1:ox1,y1:oy1,x2:ox1+w,y2:oy2}; }
+      default: return null;
+    }
+  };
+
+  // DOM属性だけ更新する軽量描画（innerHTML触らず）
+  const updateResizeOnly = (coords, W, H) => {
+    const svg = document.getElementById(`drawsvg-${key}`);
+    if (!svg) return;
+    const nx1=coords.x1*W, ny1=coords.y1*H, nx2=coords.x2*W, ny2=coords.y2*H;
+    const bx=Math.min(nx1,nx2)-4, by=Math.min(ny1,ny2)-4;
+    const bw=Math.abs(nx2-nx1)+8, bh=Math.abs(ny2-ny1)+8;
+    const bmx=bx+bw/2, bmy=by+bh/2;
+
+    const selG = svg.querySelector('.svg-obj.selected');
+    if (!selG) { renderSVGObjects(key); return; }
+
+    // オブジェクト本体を更新
+    if (obj.type === 'rect') {
+      const r = selG.querySelector('rect');
+      if (r) { r.setAttribute('x',Math.min(nx1,nx2)); r.setAttribute('y',Math.min(ny1,ny2)); r.setAttribute('width',Math.abs(nx2-nx1)); r.setAttribute('height',Math.abs(ny2-ny1)); }
+      const hit = selG.querySelectorAll('rect')[1];
+      if (hit) { hit.setAttribute('x',bx); hit.setAttribute('y',by); hit.setAttribute('width',bw); hit.setAttribute('height',bh); }
+    } else if (obj.type === 'ellipse') {
+      const el = selG.querySelector('ellipse');
+      const ecx=(nx1+nx2)/2, ecy=(ny1+ny2)/2, erx=Math.abs(nx2-nx1)/2, ery=Math.abs(ny2-ny1)/2;
+      if (el) { el.setAttribute('cx',ecx); el.setAttribute('cy',ecy); el.setAttribute('rx',erx); el.setAttribute('ry',ery); }
+    } else if (obj.type === 'line' || obj.type === 'arrow') {
+      const ln = selG.querySelector('line');
+      if (ln) { ln.setAttribute('x1',nx1); ln.setAttribute('y1',ny1); ln.setAttribute('x2',nx2); ln.setAttribute('y2',ny2); }
+    }
+
+    // 青枠を更新
+    const rects = selG.querySelectorAll('rect[stroke="#60d0ff"]');
+    rects.forEach(r => { r.setAttribute('x',bx); r.setAttribute('y',by); r.setAttribute('width',bw); r.setAttribute('height',bh); });
+
+    // ハンドル位置を更新
+    const hPos = [
+      {x:bx,   y:by},   {x:bmx,  y:by},   {x:bx+bw,y:by},
+      {x:bx,   y:bmy},  {x:bx+bw,y:bmy},
+      {x:bx,   y:by+bh},{x:bmx,  y:by+bh},{x:bx+bw,y:by+bh},
+    ];
+    const hGroups = selG.querySelectorAll('g[data-htype]');
+    hGroups.forEach((hg, i) => {
+      if (!hPos[i]) return;
+      const hx=hPos[i].x, hy=hPos[i].y;
+      const circle = hg.querySelector('circle');
+      if (circle) { circle.setAttribute('cx',hx); circle.setAttribute('cy',hy); }
+      const dot = hg.querySelector('rect');
+      if (dot) { dot.setAttribute('x',hx-7); dot.setAttribute('y',hy-7); dot.setAttribute('transform',`rotate(45 ${hx} ${hy})`); }
+    });
+
+    // 回転ハンドルも位置更新
+    const rotG = svg.querySelector('g[data-rot]');
+    if (rotG) {
+      const rhx = (nx1+nx2)/2, rhy = Math.min(ny1,ny2)-36;
+      const rc = rotG.querySelector('circle[r="20"]');
+      const rh = rotG.querySelector('circle[r="28"]');
+      const rt = rotG.querySelector('text');
+      if (rc) { rc.setAttribute('cx',rhx); rc.setAttribute('cy',rhy); }
+      if (rh) { rh.setAttribute('cx',rhx); rh.setAttribute('cy',rhy); }
+      if (rt) { rt.setAttribute('x',rhx); rt.setAttribute('y',rhy+6); }
+    }
+  };
+
   // 実際の描画更新（RAF内で実行）
   const applyResize = () => {
     rafId = null;
-    const nx = latestNx, ny = latestNy;
-
-    switch (handleType) {
-      // 四隅：縦横比固定（固定辺は開始時の対角）
-      case 'tl': {
-        const w = Math.max(ox2 - nx, MIN);
-        const h = w / aspect;
-        obj.x1 = ox2 - w; obj.y1 = oy2 - h; obj.x2 = ox2; obj.y2 = oy2;
-        break;
-      }
-      case 'tr': {
-        const w = Math.max(nx - ox1, MIN);
-        const h = w / aspect;
-        obj.x1 = ox1; obj.y1 = oy2 - h; obj.x2 = ox1 + w; obj.y2 = oy2;
-        break;
-      }
-      case 'bl': {
-        const w = Math.max(ox2 - nx, MIN);
-        const h = w / aspect;
-        obj.x1 = ox2 - w; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy1 + h;
-        break;
-      }
-      case 'br': {
-        const w = Math.max(nx - ox1, MIN);
-        const h = w / aspect;
-        obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox1 + w; obj.y2 = oy1 + h;
-        break;
-      }
-      // 辺中央：幅 or 高さのみ伸縮（反対辺は固定）
-      case 'tc': {
-        const h = Math.max(oy2 - ny, MIN);
-        obj.x1 = ox1; obj.y1 = oy2 - h; obj.x2 = ox2; obj.y2 = oy2;
-        break;
-      }
-      case 'bc': {
-        const h = Math.max(ny - oy1, MIN);
-        obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy1 + h;
-        break;
-      }
-      case 'ml': {
-        const w = Math.max(ox2 - nx, MIN);
-        obj.x1 = ox2 - w; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy2;
-        break;
-      }
-      case 'mr': {
-        const w = Math.max(nx - ox1, MIN);
-        obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox1 + w; obj.y2 = oy2;
-        break;
-      }
-    }
-    renderSVGObjects(key);
+    const coords = calcNewCoords(latestNx, latestNy);
+    if (!coords) return;
+    // objを更新
+    obj.x1=coords.x1; obj.y1=coords.y1; obj.x2=coords.x2; obj.y2=coords.y2;
+    // W/H取得
+    const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
+    const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
+    // DOM属性のみ更新（innerHTML不使用）
+    updateResizeOnly(coords, W, H);
   };
 
   const onMove = (ev) => {
@@ -2188,6 +2221,8 @@ function startResizeHandle(e, key, handleType) {
 
   const onEnd = () => {
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    // 終了後はDOM全体を正確に再構築
+    renderSVGObjects(key);
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend',  onEnd);
     window.removeEventListener('mousemove', onMove);
@@ -2801,7 +2836,7 @@ function renderSVGObjects(key) {
 
       handles.forEach(h => {
         const hg = document.createElementNS('http://www.w3.org/2000/svg','g');
-        hg.style.pointerEvents = 'auto';
+        hg.setAttribute('data-htype', h.type);
         hg.style.cursor = h.corner
           ? (h.type==='tl'||h.type==='br' ? 'nwse-resize' : 'nesw-resize')
           : (h.type==='tc'||h.type==='bc' ? 'ns-resize'   : 'ew-resize');
@@ -2842,6 +2877,7 @@ function renderSVGObjects(key) {
 
       // 回転ハンドル
       const rotGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+      rotGroup.setAttribute('data-rot', '1');
       rotGroup.style.cursor = 'grab';
       rotGroup.style.pointerEvents = 'auto';
 
