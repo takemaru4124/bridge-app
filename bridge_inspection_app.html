@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.7</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.8</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3008,24 +3008,30 @@ function setupDrawEvents(canvas, svg, key) {
       longPressTimer = null;
       const ds2 = drawState[key];
       if (!ds2) return;
-      if (ds2.selectedId) {
-        // SVGオブジェクト選択中 → コピー
+
+      const hasSVGSel = !!ds2.selectedId;
+      const hasPenSel = !!(ds2.selectedPenIds?.length);
+
+      if (hasSVGSel) {
+        // SVGオブジェクト選択中 → コピー（ペンのクリップボードをクリア）
         const obj = ds2.objects.find(o => o.id === ds2.selectedId);
         if (obj) {
-          globalClipboard = {...obj};
-          ds2.clipboard   = {...obj};
+          globalClipboard    = {...obj};
+          globalClipboardPen = null; // 混在防止
+          ds2.clipboard      = {...obj};
           showToast('📋 コピー', 'success');
         }
-      } else if (ds2.selectedPenIds?.length) {
-        // ペンストローク選択中 → コピー
+      } else if (hasPenSel) {
+        // ペンストローク選択中 → コピー（SVGのクリップボードをクリア）
         copyPenStrokes(key);
+        globalClipboard = null; // 混在防止
         showToast('📋 ペンをコピー', 'success');
+      } else if (globalClipboard) {
+        // SVGオブジェクトを貼り付け
+        pasteObjAtPos(key, longPressTouchPos.nx, longPressTouchPos.ny);
       } else if (globalClipboardPen) {
         // ペンを貼り付け
         pastePenStrokes(key);
-      } else if (globalClipboard || ds2.clipboard) {
-        // SVGオブジェクトを貼り付け
-        pasteObjAtPos(key, longPressTouchPos.nx, longPressTouchPos.ny);
       }
     }, 400); // 400msに短縮
   };
