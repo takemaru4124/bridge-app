@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.8</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.9</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2998,7 +2998,9 @@ function setupDrawEvents(canvas, svg, key) {
 
   const onLongPressStart = (e) => {
     const ds = drawState[key];
-    if (ds?.tool !== 'select') return;
+    const hasClip = !!(globalClipboard || globalClipboardPen || ds?.clipboard);
+    // selectツール、またはクリップボードがある場合は長押し有効
+    if (ds?.tool !== 'select' && !hasClip) return;
     // タッチ位置を記録（貼り付け先に使う）
     if (e.touches && e.touches[0]) {
       const p = getPos(e);
