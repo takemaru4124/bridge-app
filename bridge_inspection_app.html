@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.9</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.0</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2180,7 +2180,7 @@ function startResizeHandle(e, key, handleType) {
       const circle = hg.querySelector('circle');
       if (circle) { circle.setAttribute('cx',hx); circle.setAttribute('cy',hy); }
       const dot = hg.querySelector('rect');
-      if (dot) { dot.setAttribute('x',hx-5); dot.setAttribute('y',hy-5); dot.setAttribute('transform',`rotate(45 ${hx} ${hy})`); }
+      if (dot) { dot.setAttribute('x',hx-5); dot.setAttribute('y',hy-5); dot.setAttribute('width',10); dot.setAttribute('height',10); dot.setAttribute('transform',`rotate(45 ${hx} ${hy})`); }
     });
 
     // 回転ハンドルも位置更新
@@ -2632,8 +2632,6 @@ function setupDrawEvents(canvas, svg, key) {
         if (obj) {
           globalClipboard = {...obj};
           ds2.clipboard   = {...obj};
-          // 軽い触覚フィードバック代わりに小さいトースト
-          showToast('📋 コピー', 'success');
         }
       } else if (globalClipboard || ds2.clipboard) {
         // 選択なし → タップ位置に貼り付け
@@ -3184,9 +3182,7 @@ function copySelected(key) {
   const obj = ds.objects.find(o => o.id === ds.selectedId);
   if (obj) {
     globalClipboard = { ...obj };
-    // 後方互換でds.clipboardにも保持
     ds.clipboard = { ...obj };
-    showToast('📋 コピーしました（他ページにも貼付可）','success');
   }
 }
 
@@ -3209,7 +3205,6 @@ function pasteObj(key) {
   ds.objects.push(newObj);
   ds.selectedId = newObj.id;
   renderSVGObjects(key);
-  showToast('📌 貼り付け','success');
 }
 
 // タップ位置に貼り付け
@@ -3233,7 +3228,6 @@ function pasteObjAtPos(key, nx, ny) {
   ds.objects.push(newObj);
   ds.selectedId = newObj.id;
   renderSVGObjects(key);
-  showToast('📌 貼り付け','success');
 }
 
 // ===== 回転 =====
