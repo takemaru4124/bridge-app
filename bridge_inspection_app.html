@@ -632,20 +632,11 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.3</span> &nbsp;|&nbsp; 2026-05-09
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.4</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
   <div style="padding: 0 20px 32px;display:flex;flex-direction:column;gap:10px;">
-    <!-- 作業を保存 -->
-    <button onclick="saveWorkData()" style="
-      width:100%;padding:16px;border-radius:12px;
-      background:var(--accent);border:none;color:#fff;
-      font-size:15px;font-weight:700;cursor:pointer;
-      display:flex;align-items:center;justify-content:center;gap:8px;
-    ">
-      💾 作業を保存（続きから再開用）
-    </button>
     <!-- データ引き継ぎ -->
     <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;">
       <div style="padding:10px 14px;background:var(--surface2);font-size:11px;font-weight:700;color:var(--text2);">
@@ -685,31 +676,14 @@
   <div class="download-section">
     <h3>💾 データ保存</h3>
     <div class="download-list">
-      <div class="download-item" onclick="downloadAll()">
-        <span class="download-item-icon">📦</span>
+      <div class="download-item" onclick="saveWorkData()">
+        <span class="download-item-icon">💾</span>
         <div class="download-item-body">
-          <div class="download-item-title">データ一括保存</div>
-          <div class="download-item-sub">書き込み図面＋撮影写真をZIPで保存</div>
+          <div class="download-item-title">作業を保存（続きから再開用）</div>
+          <div class="download-item-sub">PDF・写真・書き込みを全てZIPで保存</div>
         </div>
         <button class="download-btn">保存</button>
       </div>
-      <div class="download-item" onclick="exportForAirDrop()">
-        <span class="download-item-icon">📡</span>
-        <div class="download-item-body">
-          <div class="download-item-title">AirDrop / データ共有</div>
-          <div class="download-item-sub">写真・書き込みを他のiPadに送る</div>
-        </div>
-        <button class="download-btn" style="background:var(--accent);">共有</button>
-      </div>
-      <div class="download-item" onclick="document.getElementById('import-file-input').click()">
-        <span class="download-item-icon">📥</span>
-        <div class="download-item-body">
-          <div class="download-item-title">データ取り込み</div>
-          <div class="download-item-sub">他のiPadから受け取ったデータを読み込む</div>
-        </div>
-        <button class="download-btn">取り込み</button>
-      </div>
-      <input type="file" id="import-file-input" accept=".zip,.json,application/zip,application/json" style="display:none" onchange="importData(this)">
       <div class="download-item" onclick="showSDCardModal()">
         <span class="download-item-icon">📷</span>
         <div class="download-item-body">
