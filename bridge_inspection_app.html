@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.3</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.4</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2235,6 +2235,60 @@ function startResizeHandle(e, key, handleType) {
   window.addEventListener('mouseup',   onEnd);
 }
 
+// ===== 直線スナップ（水平・垂直・45°） =====
+// 角度が±SNAP_DEG以内なら吸い付く
+const SNAP_DEG = 12;
+function snapLineAngle(nx1, ny1, nx2, ny2) {
+  const dx = nx2 - nx1;
+  const dy = ny2 - ny1;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.001) return { x2: nx2, y2: ny2, snapped: false, label: '' };
+
+  const deg = Math.atan2(dy, dx) * 180 / Math.PI; // -180〜180
+  const targets = [0, 45, 90, 135, 180, -45, -90, -135, -180];
+
+  for (const t of targets) {
+    if (Math.abs(deg - t) <= SNAP_DEG) {
+      const rad = t * Math.PI / 180;
+      const label = (t === 0 || t === 180 || t === -180) ? '水平' :
+                    (t === 90 || t === -90)              ? '垂直' : '45°';
+      return {
+        x2: nx1 + len * Math.cos(rad),
+        y2: ny1 + len * Math.sin(rad),
+        snapped: true, label
+      };
+    }
+  }
+  return { x2: nx2, y2: ny2, snapped: false, label: '' };
+}
+
+function showSnapIndicator(key, label) {
+  const id = `snap-indicator-${key}`;
+  let el = document.getElementById(id);
+  if (!el) {
+    const container = document.getElementById(`draw-container-${key}`);
+    if (!container) return;
+    el = document.createElement('div');
+    el.id = id;
+    el.style.cssText = `
+      position:absolute; top:10px; left:50%; transform:translateX(-50%);
+      background:rgba(96,208,255,0.92); color:#000;
+      font-size:13px; font-weight:700; padding:4px 14px;
+      border-radius:20px; pointer-events:none; z-index:100;
+      box-shadow:0 2px 8px rgba(0,0,0,0.2);
+      transition: opacity 0.1s;
+    `;
+    container.appendChild(el);
+  }
+  el.textContent = `📐 ${label}`;
+  el.style.opacity = '1';
+}
+
+function hideSnapIndicator(key) {
+  const el = document.getElementById(`snap-indicator-${key}`);
+  if (el) el.style.opacity = '0';
+}
+
 // ===== 選択ペンストロークのSVGハイライト =====
 function renderSelectedPenStrokes(key) {
   const ds = drawState[key];
@@ -2624,8 +2678,12 @@ function setupDrawEvents(canvas, svg, key) {
       ctx.moveTo(pos.x, pos.y);
       requestAnimationFrame(() => {});
     } else if (ds.tool === 'line' || ds.tool === 'arrow') {
-      // プレビュー線
-      renderPreviewLine(key, ds.startX, ds.startY, pos.nx, pos.ny, ds.color, ds.sizeMM, ds.tool === 'arrow');
+      // スナップ適用してプレビュー
+      const snapped = snapLineAngle(ds.startX, ds.startY, pos.nx, pos.ny);
+      renderPreviewLine(key, ds.startX, ds.startY, snapped.x2, snapped.y2, ds.color, ds.sizeMM, ds.tool === 'arrow');
+      // スナップ状態を表示（水平・垂直・45°のみ）
+      if (snapped.snapped) showSnapIndicator(key, snapped.label);
+      else hideSnapIndicator(key);
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
       // squareの場合は正方形プレビュー
       let ex2 = pos.nx, ey2 = pos.ny;
@@ -2754,15 +2812,17 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'line' || ds.tool === 'arrow') {
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
       if (dist > 0.01) {
+        const snapped = snapLineAngle(ds.startX, ds.startY, ex, ey);
         if (!ds.history) ds.history = [];
         ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
         if (ds.history.length > 30) ds.history.shift();
         ds.objects.push({
           id: Date.now(), type: ds.tool,
-          x1: ds.startX, y1: ds.startY, x2: ex, y2: ey,
+          x1: ds.startX, y1: ds.startY, x2: snapped.x2, y2: snapped.y2,
           color: ds.color, sizeMM: ds.sizeMM
         });
       }
+      hideSnapIndicator(key);
       clearPreviewLine(key);
       renderSVGObjects(key);
 
