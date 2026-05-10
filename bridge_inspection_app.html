@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.4</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.5</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2082,6 +2082,116 @@ function startRotateHandle(e, key) {
   window.addEventListener('mouseup',   onEnd);
 }
 
+// ===== リサイズハンドル =====
+// handleType: 'tl','tc','tr','ml','mr','bl','bc','br'
+function startResizeHandle(e, key, handleType) {
+  e.preventDefault(); e.stopPropagation();
+  const ds = drawState[key];
+  if (!ds || !ds.selectedId) return;
+  const obj = ds.objects.find(o => o.id === ds.selectedId);
+  if (!obj) return;
+
+  // Undo用にスナップショット
+  if (!ds.history) ds.history = [];
+  ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+  if (ds.history.length > 50) ds.history.shift();
+
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  const rect   = canvas.getBoundingClientRect();
+  const scale  = zoomScales[key] || 1;
+  const baseW  = rect.width  / scale;
+  const baseH  = rect.height / scale;
+
+  // オブジェクトの初期状態を保持（正規化座標）
+  let ox1 = Math.min(obj.x1, obj.x2);
+  let oy1 = Math.min(obj.y1, obj.y2);
+  let ox2 = Math.max(obj.x1, obj.x2);
+  let oy2 = Math.max(obj.y1, obj.y2);
+
+  const getPos = (ev) => {
+    const src = ev.touches ? ev.touches[0] : ev;
+    const relX = (src.clientX - rect.left) / scale;
+    const relY = (src.clientY - rect.top)  / scale;
+    return { nx: relX / baseW, ny: relY / baseH };
+  };
+
+  const onMove = (ev) => {
+    ev.preventDefault();
+    const pos = getPos(ev);
+    const nx = pos.nx, ny = pos.ny;
+    const MIN = 0.02; // 最小サイズ（正規化）
+
+    // 四隅：縦横比固定リサイズ
+    if (handleType === 'tl') {
+      const newW = ox2 - nx;
+      const newH = oy2 - ny;
+      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
+      if (newW > MIN && newH > MIN) {
+        const w = Math.max(newW, newH * aspect);
+        const h = w / aspect;
+        obj.x1 = ox2 - w; obj.y1 = oy2 - h;
+        obj.x2 = ox2;     obj.y2 = oy2;
+      }
+    } else if (handleType === 'tr') {
+      const newW = nx - ox1;
+      const newH = oy2 - ny;
+      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
+      if (newW > MIN && newH > MIN) {
+        const w = Math.max(newW, newH * aspect);
+        const h = w / aspect;
+        obj.x1 = ox1;     obj.y1 = oy2 - h;
+        obj.x2 = ox1 + w; obj.y2 = oy2;
+      }
+    } else if (handleType === 'bl') {
+      const newW = ox2 - nx;
+      const newH = ny - oy1;
+      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
+      if (newW > MIN && newH > MIN) {
+        const w = Math.max(newW, newH * aspect);
+        const h = w / aspect;
+        obj.x1 = ox2 - w; obj.y1 = oy1;
+        obj.x2 = ox2;     obj.y2 = oy1 + h;
+      }
+    } else if (handleType === 'br') {
+      const newW = nx - ox1;
+      const newH = ny - oy1;
+      const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
+      if (newW > MIN && newH > MIN) {
+        const w = Math.max(newW, newH * aspect);
+        const h = w / aspect;
+        obj.x1 = ox1;     obj.y1 = oy1;
+        obj.x2 = ox1 + w; obj.y2 = oy1 + h;
+      }
+    // 辺中央：幅 or 高さのみ伸縮
+    } else if (handleType === 'tc') {
+      const newH = oy2 - ny;
+      if (newH > MIN) { obj.x1 = ox1; obj.y1 = oy2 - newH; obj.x2 = ox2; obj.y2 = oy2; }
+    } else if (handleType === 'bc') {
+      const newH = ny - oy1;
+      if (newH > MIN) { obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy1 + newH; }
+    } else if (handleType === 'ml') {
+      const newW = ox2 - nx;
+      if (newW > MIN) { obj.x1 = ox2 - newW; obj.y1 = oy1; obj.x2 = ox2; obj.y2 = oy2; }
+    } else if (handleType === 'mr') {
+      const newW = nx - ox1;
+      if (newW > MIN) { obj.x1 = ox1; obj.y1 = oy1; obj.x2 = ox1 + newW; obj.y2 = oy2; }
+    }
+    renderSVGObjects(key);
+  };
+
+  const onEnd = () => {
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('touchend',  onEnd);
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup',   onEnd);
+  };
+
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('touchend',  onEnd);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup',   onEnd);
+}
+
 // ===== 描画エンジン =====
 // drawState[key] = {
 //   tool: 'pen'|'line'|'arrow'|'select'|'eraser'
@@ -2652,11 +2762,14 @@ function renderSVGObjects(key) {
       g.appendChild(hit);
     }
 
-    // 選択ハンドル
+    // 選択ハンドル＋リサイズハンドル
     if (isSel) {
-      const selRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
       const bx = Math.min(x1,x2)-4, by = Math.min(y1,y2)-4;
       const bw = Math.abs(x2-x1)+8, bh = Math.abs(y2-y1)+8;
+      const bmx = bx + bw/2, bmy = by + bh/2;
+
+      // 青枠
+      const selRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
       selRect.setAttribute('x',bx); selRect.setAttribute('y',by);
       selRect.setAttribute('width',bw); selRect.setAttribute('height',bh);
       selRect.setAttribute('fill','none');
@@ -2664,6 +2777,52 @@ function renderSVGObjects(key) {
       selRect.setAttribute('stroke-width','1');
       selRect.setAttribute('stroke-dasharray','4 3');
       g.appendChild(selRect);
+
+      // リサイズハンドル定義
+      // 四隅=◆（縦横比固定）、辺中央=◇（幅 or 高さのみ）
+      const handles = [
+        { type:'tl', x:bx,    y:by,    corner:true  },
+        { type:'tc', x:bmx,   y:by,    corner:false  },
+        { type:'tr', x:bx+bw, y:by,    corner:true  },
+        { type:'ml', x:bx,    y:bmy,   corner:false  },
+        { type:'mr', x:bx+bw, y:bmy,   corner:false  },
+        { type:'bl', x:bx,    y:by+bh, corner:true  },
+        { type:'bc', x:bmx,   y:by+bh, corner:false  },
+        { type:'br', x:bx+bw, y:by+bh, corner:true  },
+      ];
+
+      handles.forEach(h => {
+        const hg = document.createElementNS('http://www.w3.org/2000/svg','g');
+        hg.style.pointerEvents = 'auto';
+        hg.style.cursor = h.corner
+          ? (h.type==='tl'||h.type==='br' ? 'nwse-resize' : 'nesw-resize')
+          : (h.type==='tc'||h.type==='bc' ? 'ns-resize'   : 'ew-resize');
+
+        // 透明ヒットエリア（タップしやすく）
+        const hitCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        hitCircle.setAttribute('cx', h.x); hitCircle.setAttribute('cy', h.y);
+        hitCircle.setAttribute('r', 18);
+        hitCircle.setAttribute('fill', 'transparent');
+        hg.appendChild(hitCircle);
+
+        // 見た目：四隅=塗りつぶし◆、辺=白抜き◇
+        const dot = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        const ds2 = 7; // 半辺
+        dot.setAttribute('x', h.x - ds2); dot.setAttribute('y', h.y - ds2);
+        dot.setAttribute('width', ds2*2); dot.setAttribute('height', ds2*2);
+        dot.setAttribute('rx', 2);
+        dot.setAttribute('fill',   h.corner ? '#60d0ff' : '#fff');
+        dot.setAttribute('stroke', '#60d0ff');
+        dot.setAttribute('stroke-width', '1.5');
+        dot.setAttribute('transform', `rotate(45 ${h.x} ${h.y})`);
+        dot.setAttribute('pointer-events', 'none');
+        hg.appendChild(dot);
+
+        const onResStart = (e) => startResizeHandle(e, key, h.type);
+        hg.addEventListener('mousedown',  onResStart);
+        hg.addEventListener('touchstart', onResStart, { passive: false });
+        g.appendChild(hg);
+      });
     }
 
     svg.appendChild(g);
