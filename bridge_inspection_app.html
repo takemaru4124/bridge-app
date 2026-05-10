@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.1</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.2</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -683,6 +683,14 @@
           <div class="download-item-sub">PDF・写真・書き込みを全てZIPで保存</div>
         </div>
         <button class="download-btn">保存</button>
+      </div>
+      <div class="download-item" onclick="downloadAll()">
+        <span class="download-item-icon">📦</span>
+        <div class="download-item-body">
+          <div class="download-item-title">成果データを保存</div>
+          <div class="download-item-sub">書き込み図面＋撮影写真をフォルダ分けして保存</div>
+        </div>
+        <button class="download-btn" style="background:var(--green);">出力</button>
       </div>
       <div class="download-item" onclick="showSDCardModal()">
         <span class="download-item-icon">📷</span>
