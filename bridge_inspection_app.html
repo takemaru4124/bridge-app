@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.0</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.1</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -5125,15 +5125,25 @@ function showScreen(name) {
   if (direction === 'forward') {
     fromEl.classList.add('is-behind');
     toEl.classList.add('is-active');
+    // ブラウザのスワイプバックを吸収するためダミー履歴を積む
+    history.pushState({ screen: name }, '', '');
   } else {
-    // 後ろにいた画面（to）を手前に戻す
     toEl.classList.add('is-active');
-    // fromは右に消える（何もクラス付けない = translateX(100%)のデフォルト）
   }
 
   toEl.scrollTop = 0;
   currentScreen = name;
 }
+
+// ブラウザの「戻る」ジェスチャー・ボタンをアプリ内goBackに吸収
+window.addEventListener('popstate', (e) => {
+  // アプリ内画面遷移として処理（ブラウザを実際に戻らせない）
+  goBack();
+  // goBack後も履歴が尽きないようダミーを積む
+  if (currentScreen !== 'home') {
+    history.pushState({ screen: currentScreen }, '', '');
+  }
+});
 
 async function goBack() {
   // 写真ポップアップが開いている場合はまず閉じる
