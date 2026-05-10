@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.5</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.6</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2095,14 +2095,14 @@ function startEndpointHandle(e, key, objId, point) {
   if (ds.history.length > 50) ds.history.shift();
 
   const canvas = document.getElementById(`drawcanvas-${key}`);
-  const rect   = canvas.getBoundingClientRect();
-  const scale  = zoomScales[key] || 1;
-  const baseW  = rect.width  / scale;
-  const baseH  = rect.height / scale;
   let rafId = null;
   let latestNx = 0, latestNy = 0;
 
   const getPos = (ev) => {
+    const rect  = canvas.getBoundingClientRect();
+    const scale = zoomScales[key] || 1;
+    const baseW = rect.width  / scale;
+    const baseH = rect.height / scale;
     const src = ev.touches ? ev.touches[0] : ev;
     return {
       nx: (src.clientX - rect.left) / scale / baseW,
@@ -3096,15 +3096,28 @@ function renderSVGObjects(key) {
         g.appendChild(arr);
       }
 
-      // ヒットエリア
+      // ヒットエリア（非選択時のみ有効）
       const hit = document.createElementNS('http://www.w3.org/2000/svg','line');
       hit.setAttribute('x1',x1); hit.setAttribute('y1',y1);
       hit.setAttribute('x2',x2); hit.setAttribute('y2',y2);
       hit.setAttribute('stroke','transparent');
-      hit.setAttribute('stroke-width', Math.max(sw+12,16));
+      hit.setAttribute('stroke-width', isSel ? '0' : Math.max(sw+12,16));
       hit.style.cursor = 'pointer';
       hit.addEventListener('click', () => { ds.selectedId = ds.selectedId===obj.id?null:obj.id; renderSVGObjects(key); });
       g.appendChild(hit);
+
+      // 選択時：細い点線でハイライト（塗り潰しにならないよう細く）
+      if (isSel) {
+        const selLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+        selLine.setAttribute('x1',x1); selLine.setAttribute('y1',y1);
+        selLine.setAttribute('x2',x2); selLine.setAttribute('y2',y2);
+        selLine.setAttribute('stroke','#60d0ff');
+        selLine.setAttribute('stroke-width', '1.5');
+        selLine.setAttribute('stroke-dasharray','5 4');
+        selLine.setAttribute('stroke-linecap','round');
+        selLine.setAttribute('pointer-events','none');
+        g.appendChild(selLine);
+      }
 
     } else if (obj.type === 'rect') {
       const rx = Math.min(x1,x2), ry = Math.min(y1,y2);
