@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.7</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.5.8</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2837,6 +2837,7 @@ function renderSVGObjects(key) {
       handles.forEach(h => {
         const hg = document.createElementNS('http://www.w3.org/2000/svg','g');
         hg.setAttribute('data-htype', h.type);
+        hg.style.pointerEvents = 'auto';
         hg.style.cursor = h.corner
           ? (h.type==='tl'||h.type==='br' ? 'nwse-resize' : 'nesw-resize')
           : (h.type==='tc'||h.type==='bc' ? 'ns-resize'   : 'ew-resize');
