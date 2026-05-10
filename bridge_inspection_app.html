@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.9</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.0</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2676,30 +2676,27 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'select') {
       const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
       if (hit) {
-        // SVGオブジェクトにヒット：移動開始
-        if (!ds.history) ds.history = [];
-        ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
-        if (ds.history.length > 50) ds.history.shift();
+        // SVGオブジェクトにヒット：選択してドラッグ待ち（すぐ移動開始しない）
         ds.selectedId    = hit.id;
         ds.selectedIds   = [hit.id];
         ds.selectedPenIds = [];
         ds.drawing       = true;
         ds.isRangeSelect = false;
+        ds._pendingMove  = true;  // 移動確定待ち
         ds.startX = pos.nx; ds.startY = pos.ny;
         ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       } else if (ds.selectedPenIds?.length && isPenHit(pos.nx, pos.ny, ds.selectedPenIds, ds.penStrokes||[])) {
-        // 選択済みペンストロークをタップ → 移動開始
-        if (!ds.history) ds.history = [];
-        ds.history.push({ type: 'pen', penData: canvas.toDataURL(), penStrokes: (ds.penStrokes||[]).map(s=>({...s,points:[...s.points]})) });
-        if (ds.history.length > 50) ds.history.shift();
+        // 選択済みペンストロークをタップ → ドラッグ待ち
         ds.drawing       = true;
         ds.isRangeSelect = false;
+        ds._pendingMove  = true;  // 移動確定待ち
         ds.startX = pos.nx; ds.startY = pos.ny;
         ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       } else {
         // 空白タップ：範囲選択開始
         ds.selectedId    = null;
         ds.selectedPenIds = [];
+        ds._pendingMove  = false;
         ds.drawing       = true;
         ds.isRangeSelect = true;
         ds.startX = pos.nx; ds.startY = pos.ny;
@@ -2820,6 +2817,16 @@ function setupDrawEvents(canvas, svg, key) {
       renderPreviewShape(key, ds.startX, ds.startY, ex2, ey2, ds.color, ds.sizeMM, shapeType, ds.pattern);
     } else if (ds.tool === 'select' && ds.selectedId) {
       // 選択中オブジェクトを移動（単体）
+      // _pendingMoveが true の場合、一定距離超えてから移動開始
+      if (ds._pendingMove) {
+        const dist = Math.hypot(pos.nx - ds.startX, pos.ny - ds.startY);
+        if (dist < 0.012) return; // 閾値未満はまだ移動しない
+        // 閾値超えたら移動モード確定・Undo記録
+        ds._pendingMove = false;
+        if (!ds.history) ds.history = [];
+        ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+        if (ds.history.length > 50) ds.history.shift();
+      }
       const obj = ds.objects.find(o => o.id === ds.selectedId);
       if (obj) {
         const dx = pos.nx - ds.startX;
@@ -2831,6 +2838,14 @@ function setupDrawEvents(canvas, svg, key) {
       }
     } else if (ds.tool === 'select' && !ds.selectedId && ds.selectedPenIds?.length) {
       // ペンストロークのみ選択時の移動
+      if (ds._pendingMove) {
+        const dist = Math.hypot(pos.nx - ds.startX, pos.ny - ds.startY);
+        if (dist < 0.012) return;
+        ds._pendingMove = false;
+        if (!ds.history) ds.history = [];
+        ds.history.push({ type: 'pen', penData: canvas.toDataURL(), penStrokes: (ds.penStrokes||[]).map(s=>({...s,points:[...s.points]})) });
+        if (ds.history.length > 50) ds.history.shift();
+      }
       const dx = pos.nx - ds.startX;
       const dy = pos.ny - ds.startY;
       movePenStrokes(key, dx, dy);
@@ -2862,6 +2877,7 @@ function setupDrawEvents(canvas, svg, key) {
     const ds = drawState[key];
     if (!ds.drawing) return;
     ds.drawing = false;
+    ds._pendingMove = false;
 
     // ペンストローク確定
     if (ds.tool === 'pen' && ds._currentStroke) {
