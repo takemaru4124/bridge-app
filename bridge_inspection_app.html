@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.2</span> &nbsp;|&nbsp; 2026-05-10
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.6.3</span> &nbsp;|&nbsp; 2026-05-10
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2352,6 +2352,15 @@ function pastePenStrokes(key) {
 
 let globalClipboardPen = null;
 
+// 選択済みペンのbbox内タップ判定
+function isPenHit(nx, ny, selectedPenIds, penStrokes) {
+  return penStrokes.some(s => {
+    if (!selectedPenIds.includes(s.id) || !s.bbox) return false;
+    const b = s.bbox;
+    return nx >= b.x1 && nx <= b.x2 && ny >= b.y1 && ny <= b.y2;
+  });
+}
+
 // ===== 描画エンジン =====
 // drawState[key] = {
 //   tool: 'pen'|'line'|'arrow'|'select'|'eraser'
@@ -2492,12 +2501,22 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'select') {
       const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
       if (hit) {
-        // ヒット時：移動前の状態をhistoryに記録
+        // SVGオブジェクトにヒット：移動開始
         if (!ds.history) ds.history = [];
         ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
         if (ds.history.length > 50) ds.history.shift();
         ds.selectedId    = hit.id;
         ds.selectedIds   = [hit.id];
+        ds.selectedPenIds = [];
+        ds.drawing       = true;
+        ds.isRangeSelect = false;
+        ds.startX = pos.nx; ds.startY = pos.ny;
+        ds.lastX  = pos.nx; ds.lastY  = pos.ny;
+      } else if (ds.selectedPenIds?.length && isPenHit(pos.nx, pos.ny, ds.selectedPenIds, ds.penStrokes||[])) {
+        // 選択済みペンストロークをタップ → 移動開始
+        if (!ds.history) ds.history = [];
+        ds.history.push({ type: 'pen', penData: canvas.toDataURL(), penStrokes: (ds.penStrokes||[]).map(s=>({...s,points:[...s.points]})) });
+        if (ds.history.length > 50) ds.history.shift();
         ds.drawing       = true;
         ds.isRangeSelect = false;
         ds.startX = pos.nx; ds.startY = pos.ny;
@@ -2505,12 +2524,14 @@ function setupDrawEvents(canvas, svg, key) {
       } else {
         // 空白タップ：範囲選択開始
         ds.selectedId    = null;
+        ds.selectedPenIds = [];
         ds.drawing       = true;
         ds.isRangeSelect = true;
         ds.startX = pos.nx; ds.startY = pos.ny;
         ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       }
       renderSVGObjects(key);
+      renderSelectedPenStrokes(key);
       return;
     }
 
@@ -2805,14 +2826,22 @@ function setupDrawEvents(canvas, svg, key) {
       const ds2 = drawState[key];
       if (!ds2) return;
       if (ds2.selectedId) {
-        // 選択中 → コピー（トーストなし）
+        // SVGオブジェクト選択中 → コピー
         const obj = ds2.objects.find(o => o.id === ds2.selectedId);
         if (obj) {
           globalClipboard = {...obj};
           ds2.clipboard   = {...obj};
+          showToast('📋 コピー', 'success');
         }
+      } else if (ds2.selectedPenIds?.length) {
+        // ペンストローク選択中 → コピー
+        copyPenStrokes(key);
+        showToast('📋 ペンをコピー', 'success');
+      } else if (globalClipboardPen) {
+        // ペンを貼り付け
+        pastePenStrokes(key);
       } else if (globalClipboard || ds2.clipboard) {
-        // 選択なし → タップ位置に貼り付け
+        // SVGオブジェクトを貼り付け
         pasteObjAtPos(key, longPressTouchPos.nx, longPressTouchPos.ny);
       }
     }, 400); // 400msに短縮
