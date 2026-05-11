@@ -665,7 +665,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.9</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v2.0.0</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2044,7 +2044,7 @@ function setupPinchZoom(key) {
   };
 
   const applyTransform = () => {
-    inner.style.transformOrigin = `${originX}px ${originY}px`;
+    inner.style.transformOrigin = '0 0';
     inner.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
     zoomScales[key] = scale;
     zoomStates[key] = { scale, panX, panY };
@@ -2093,17 +2093,18 @@ function setupPinchZoom(key) {
     inner.style.transition = '';
     if (isPinching && e.touches.length === 2) {
       const newDist = getDist(e.touches);
-      scale = Math.min(10, Math.max(1, lastScale * newDist / initDist));
-      if (scale <= 1) { panX = 0; panY = 0; }
-      else {
-        // touchstart時に固定した中点を基準にpanを再計算
-        const wRect = wrapper.getBoundingClientRect();
-        const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
-        const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
-        panX = midX - originX * scale;
-        panY = midY - originY * scale;
-        clampPan();
-      }
+      const newScale = Math.min(10, Math.max(1, lastScale * newDist / initDist));
+      const wRect = wrapper.getBoundingClientRect();
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
+      // 中点がコンテンツ上の同じ点を指し続けるようpanを計算
+      // originX/Y = touchstart時のコンテンツ座標（不変）
+      // midX = originX * newScale + panX → panX = midX - originX * newScale
+      panX = midX - originX * newScale;
+      panY = midY - originY * newScale;
+      scale = newScale;
+      if (scale <= 1) { scale = 1; panX = 0; panY = 0; }
+      else clampPan();
       applyTransform();
       if (drawState[key]) drawState[key].drawing = false;
       e.stopPropagation(); e.preventDefault();
