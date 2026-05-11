@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.6</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.7</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3146,8 +3146,10 @@ function renderSVGObjects(key) {
   const ds = drawState[key];
   if (!ds) return;
   svg.innerHTML = '';
-  const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
-  const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
+
+  // offsetWidth/Heightを優先（ズーム変換の影響を受けない）
+  const W = canvas.offsetWidth  || canvas.getBoundingClientRect().width;
+  const H = canvas.offsetHeight || canvas.getBoundingClientRect().height;
 
   // W/Hが0の場合はレイアウト未確定→少し待って再試行
   if ((W === 0 || H === 0) && ds.objects?.length > 0) {
@@ -3463,8 +3465,8 @@ function renderPreviewLine(key, nx1, ny1, nx2, ny2, color, sizeMM, isArrow) {
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (!svg || !canvas) return;
   svg.innerHTML = '';
-  const W = canvas.getBoundingClientRect().width;
-  const H = canvas.getBoundingClientRect().height;
+  const W = canvas.offsetWidth  || canvas.getBoundingClientRect().width;
+  const H = canvas.offsetHeight || canvas.getBoundingClientRect().height;
   const sw = mmToPx(sizeMM, 1);
   const x1=nx1*W, y1=ny1*H, x2=nx2*W, y2=ny2*H;
 
@@ -3504,8 +3506,8 @@ function renderPreviewShape(key, nx1, ny1, nx2, ny2, color, sizeMM, type, patter
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (!svg || !canvas) return;
   svg.innerHTML = '';
-  const W = canvas.getBoundingClientRect().width;
-  const H = canvas.getBoundingClientRect().height;
+  const W = canvas.offsetWidth  || canvas.getBoundingClientRect().width;
+  const H = canvas.offsetHeight || canvas.getBoundingClientRect().height;
   const sw = mmToPx(sizeMM, 1);
   const x1=nx1*W, y1=ny1*H, x2=nx2*W, y2=ny2*H;
 
