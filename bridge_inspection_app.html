@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.7</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.9</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -928,32 +928,46 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
     // 写真番号エントリ収集（径間番号も取得）
     for (let i = 0; i < items.length; i++) {
       if (items[i].str === '写真番号') {
-        for (let j = i + 1; j < Math.min(i + 6, items.length); j++) {
+        const tx = items[i].x / W;
+        const ty = items[i].y / H;
+
+        // x方向で右隣にある最も近い数字を採用
+        let foundNo = null;
+        let bestXDist = 9999;
+        for (let j = 0; j < items.length; j++) {
           const nxt = items[j];
-          if (['写真番号','撮影年月日','径間番号','部材名','メモ'].includes(nxt.str)) break;
-          if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
-            let span = 1;
-            for (let k = j + 1; k < Math.min(j + 6, items.length); k++) {
-              if (items[k].str === '径間番号') {
-                for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
-                  if (/^\d+$/.test(items[l].str)) {
-                    span = parseInt(items[l].str);
-                    break;
-                  }
-                }
-                break;
-              }
-            }
-            allEntries.push({
-              no: parseInt(nxt.str),
-              span,
-              tx: items[i].x / W,
-              globalY: pi + items[i].y / H,
-              pnum,
-            });
-            break;
+          if (!/^\d+$/.test(nxt.str) || parseInt(nxt.str) <= 0) continue;
+          if (Math.abs(nxt.y / H - ty) > 0.05) continue;
+          const xDist = nxt.x - items[i].x;
+          if (xDist > 0 && xDist < bestXDist) {
+            bestXDist = xDist;
+            foundNo = parseInt(nxt.str);
           }
         }
+        if (!foundNo) continue;
+
+        // 径間番号を取得（同列・直下の径間番号テキストを検索）
+        let span = 1;
+        for (let k = 0; k < items.length; k++) {
+          if (items[k].str !== '径間番号') continue;
+          if (Math.abs(items[k].x / W - tx) > 0.08) continue;
+          if (Math.abs(items[k].y / H - ty) > 0.15) continue;
+          for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
+            if (/^\d+$/.test(items[l].str)) {
+              span = parseInt(items[l].str);
+              break;
+            }
+          }
+          break;
+        }
+
+        allEntries.push({
+          no: foundNo,
+          span,
+          tx,
+          globalY: pi + ty,
+          pnum,
+        });
       }
     }
 
@@ -1046,18 +1060,18 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
       const tx = items[i].x / W;
       const ty = items[i].y / H;
 
-      // 写真番号の後の数字を探す
-      // ※「撮影年月日」はbreakしない（同じ行に混在するため）
+      // 写真番号テキストの右隣で最も近い数字を採用
+      // y差0.05以内 かつ x方向で右側にある数字のうち最も近いものを選ぶ
       let no = null;
-      for (let j = i + 1; j < Math.min(i + 8, items.length); j++) {
+      let bestXDist = 9999;
+      for (let j = 0; j < items.length; j++) {
         const nxt = items[j];
-        if (nxt.str === '写真番号') break; // 次の写真番号が来たら終了
-        if (/^\d+$/.test(nxt.str) && parseInt(nxt.str) > 0) {
-          // 写真番号と同じ行（y差0.05以内）の数字のみ採用
-          if (Math.abs(nxt.y / H - ty) < 0.05) {
-            no = parseInt(nxt.str);
-            break;
-          }
+        if (!/^\d+$/.test(nxt.str) || parseInt(nxt.str) <= 0) continue;
+        if (Math.abs(nxt.y / H - ty) > 0.05) continue;
+        const xDist = nxt.x - items[i].x;
+        if (xDist > 0 && xDist < bestXDist) {
+          bestXDist = xDist;
+          no = parseInt(nxt.str);
         }
       }
       if (!no) continue;
@@ -1119,6 +1133,21 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
       if (best !== null) {
         used.add(best);
         const coord = imgCoords[best];
+
+        // 同列・直下に隣接する画像があれば高さを合算（市町村版など1スロットが上下2枚に分割されているケース対応）
+        let mergedH = coord.h;
+        let bottomEdge = coord.y + coord.h;
+        for (let idx2 = 0; idx2 < imgCoords.length; idx2++) {
+          if (used.has(idx2)) continue;
+          const img2 = imgCoords[idx2];
+          // 同列（x差0.03以内）かつ直下に隣接（gap 0.01以内）
+          if (Math.abs(img2.x - coord.x) < 0.03 && Math.abs(img2.y - bottomEdge) < 0.01) {
+            used.add(idx2);
+            mergedH += img2.h;
+            bottomEdge = img2.y + img2.h;
+          }
+        }
+
         const isNON = entry.no >= 1000;
         const span  = entry.span || 1;
         slots.push({
@@ -1127,7 +1156,7 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
           span,
           required: true, isNON,
           prevPage: pnum, prevNo: entry.no,
-          crop: coord,
+          crop: { x: coord.x, y: coord.y, w: coord.w, h: mergedH },
         });
       }
     }
