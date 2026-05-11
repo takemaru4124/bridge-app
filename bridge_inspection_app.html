@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.5</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.6</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2623,6 +2623,13 @@ function setupDrawCanvas(key, imgData) {
 
       const rect = baseImg.getBoundingClientRect();
       const dpr  = window.devicePixelRatio;
+
+      // rectが0の場合は再試行（まだレイアウト未確定）
+      if (rect.width === 0) {
+        setTimeout(resizeCanvas, 100);
+        return;
+      }
+
       canvas.width  = rect.width  * dpr;
       canvas.height = rect.height * dpr;
 
@@ -2634,9 +2641,8 @@ function setupDrawCanvas(key, imgData) {
         const ctx = canvas.getContext('2d');
         const s = new Image();
         s.onload = () => {
-          // Canvas全体にフィット（デバイス間の解像度差を吸収）
           ctx.drawImage(s, 0, 0, canvas.width, canvas.height);
-          // penData描画完了後にSVGオブジェクトを描画（順序保証）
+          // ペン描画完了後にSVGを描画（順序保証）
           renderSVGObjects(key);
         };
         s.onerror = () => renderSVGObjects(key);
@@ -2645,7 +2651,8 @@ function setupDrawCanvas(key, imgData) {
         renderSVGObjects(key);
       }
     };
-    setTimeout(resizeCanvas, 120);
+    // 画像レイアウト確定を待つ（120ms→200ms）
+    setTimeout(resizeCanvas, 200);
     window.addEventListener('resize', () => resizeCanvas());
 
     setupDrawEvents(canvas, svg, key);
@@ -3141,6 +3148,12 @@ function renderSVGObjects(key) {
   svg.innerHTML = '';
   const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
   const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
+
+  // W/Hが0の場合はレイアウト未確定→少し待って再試行
+  if ((W === 0 || H === 0) && ds.objects?.length > 0) {
+    setTimeout(() => renderSVGObjects(key), 150);
+    return;
+  }
 
   // 選択が外れたら編集パネルを閉じる（ボタンで開く方式）
   if (!ds.selectedId) closeEditPanel();
