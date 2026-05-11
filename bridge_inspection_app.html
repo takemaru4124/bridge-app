@@ -665,7 +665,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.5</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.6</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2113,12 +2113,14 @@ function setupPinchZoom(key) {
     if (e.touches.length < 2) isPinching = false;
     if (e.touches.length === 0) {
       isPanning = false;
-      // scale=1以下になっても位置はリセットしない（スクロール位置を保持）
       if (scale < 1) {
         scale = 1;
         applyTransform();
       }
-      if (drawState[key]) drawState[key].drawing = false;
+      // 描画ツール使用中はcanvas側のonEndに任せる（drawing=falseにしない）
+      if (drawState[key] && drawState[key].tool === 'scroll') {
+        drawState[key].drawing = false;
+      }
     }
   });
 
