@@ -1922,8 +1922,7 @@ function buildToolbarHTML(drawKey, pageNum) {
         <button class="draw-tool-btn" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
         <button class="draw-tool-btn" id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
         <button class="draw-tool-btn" id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
-        <button class="draw-tool-btn" id="tool-rect-${drawKey}"    onclick="setTool('rect','${drawKey}')">▭ 長方形</button>
-        <button class="draw-tool-btn" id="tool-square-${drawKey}"  onclick="setTool('square','${drawKey}')">■ 正方形</button>
+        <button class="draw-tool-btn" id="tool-rect-${drawKey}"    onclick="toggleRectSquare('${drawKey}')">▭ 長方形</button>
         <button class="draw-tool-btn" id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
         <button class="draw-tool-btn" id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
         <span class="draw-toolbar-sep"></span>
@@ -2999,19 +2998,23 @@ function setupDrawEvents(canvas, svg, key) {
         obj.x2 += dx; obj.y2 += dy;
         ds.startX = pos.nx; ds.startY = pos.ny;
 
-        // 移動中も端点スナップを適用（端点が他のオブジェクトに吸い付く）
-        const snap1 = snapToEndpoints(obj.x1, obj.y1, ds.objects, obj.id);
-        const snap2 = snapToEndpoints(obj.x2, obj.y2, ds.objects, obj.id);
-        if (snap1.snapped) {
-          const sdx = snap1.nx - obj.x1, sdy = snap1.ny - obj.y1;
-          obj.x1 = snap1.nx; obj.y1 = snap1.ny;
-          obj.x2 += sdx; obj.y2 += sdy;
-          showSnapIndicator(key, '端点');
-        } else if (snap2.snapped) {
-          const sdx = snap2.nx - obj.x2, sdy = snap2.ny - obj.y2;
-          obj.x2 = snap2.nx; obj.y2 = snap2.ny;
-          obj.x1 += sdx; obj.y1 += sdy;
-          showSnapIndicator(key, '端点');
+        // 移動中の端点スナップ（線・矢印のみ。rect/ellipseは対角座標なので除外）
+        if (obj.type === 'line' || obj.type === 'arrow') {
+          const snap1 = snapToEndpoints(obj.x1, obj.y1, ds.objects, obj.id);
+          const snap2 = snapToEndpoints(obj.x2, obj.y2, ds.objects, obj.id);
+          if (snap1.snapped) {
+            const sdx = snap1.nx - obj.x1, sdy = snap1.ny - obj.y1;
+            obj.x1 = snap1.nx; obj.y1 = snap1.ny;
+            obj.x2 += sdx; obj.y2 += sdy;
+            showSnapIndicator(key, '端点');
+          } else if (snap2.snapped) {
+            const sdx = snap2.nx - obj.x2, sdy = snap2.ny - obj.y2;
+            obj.x2 = snap2.nx; obj.y2 = snap2.ny;
+            obj.x1 += sdx; obj.y1 += sdy;
+            showSnapIndicator(key, '端点');
+          } else {
+            hideSnapIndicator(key);
+          }
         } else {
           hideSnapIndicator(key);
         }
@@ -3207,32 +3210,66 @@ function setupDrawEvents(canvas, svg, key) {
       longPressTimer = null;
       const ds2 = drawState[key];
       if (!ds2) return;
+      const hasSVGSel  = !!ds2.selectedId;
+      const hasPenSel  = !!(ds2.selectedPenIds?.length);
+      const hasClipSVG = !!globalClipboard;
+      const hasClipPen = !!globalClipboardPen;
+      const hasAnyClip = hasClipSVG || hasClipPen;
 
-      const hasSVGSel = !!ds2.selectedId;
-      const hasPenSel = !!(ds2.selectedPenIds?.length);
+      // 選択メニューを構築
+      const items = [];
+      if (hasSVGSel || hasPenSel) items.push({ label: '📋 コピー', action: 'copy' });
+      if (hasAnyClip)              items.push({ label: '📌 貼り付け', action: 'paste' });
+      if (items.length === 0) return;
 
-      if (hasSVGSel) {
-        // SVGオブジェクト選択中 → コピー（ペンのクリップボードをクリア）
-        const obj = ds2.objects.find(o => o.id === ds2.selectedId);
-        if (obj) {
-          globalClipboard    = {...obj};
-          globalClipboardPen = null; // 混在防止
-          ds2.clipboard      = {...obj};
-          showToast('📋 コピー', 'success');
-        }
-      } else if (hasPenSel) {
-        // ペンストローク選択中 → コピー（SVGのクリップボードをクリア）
-        copyPenStrokes(key);
-        globalClipboard = null; // 混在防止
-        showToast('📋 ペンをコピー', 'success');
-      } else if (globalClipboard) {
-        // SVGオブジェクトを貼り付け
-        pasteObjAtPos(key, longPressTouchPos.nx, longPressTouchPos.ny);
-      } else if (globalClipboardPen) {
-        // ペンを貼り付け
-        pastePenStrokes(key);
-      }
-    }, 400); // 400msに短縮
+      // 既存メニューを削除
+      document.querySelectorAll('.longpress-menu').forEach(el => el.remove());
+
+      const canvas = document.getElementById(`drawcanvas-${key}`);
+      const rect   = canvas.getBoundingClientRect();
+      const menu   = document.createElement('div');
+      menu.className = 'longpress-menu';
+      menu.style.cssText = `
+        position:fixed; z-index:9999;
+        left:${rect.left + longPressTouchPos.nx * rect.width}px;
+        top:${rect.top  + longPressTouchPos.ny * rect.height - 60}px;
+        transform:translateX(-50%);
+        background:var(--surface2,#2a2a2a); border:1px solid var(--border);
+        border-radius:10px; overflow:hidden;
+        box-shadow:0 4px 16px rgba(0,0,0,0.4);
+        display:flex; flex-direction:row;
+      `;
+      items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = item.label;
+        btn.style.cssText = 'padding:12px 18px;font-size:14px;font-weight:700;background:none;border:none;color:var(--text);cursor:pointer;white-space:nowrap;';
+        btn.addEventListener('touchstart', (ev) => {
+          ev.preventDefault(); ev.stopPropagation();
+          menu.remove();
+          if (item.action === 'copy') {
+            if (hasSVGSel) {
+              const obj = ds2.objects.find(o => o.id === ds2.selectedId);
+              if (obj) { globalClipboard = {...obj}; globalClipboardPen = null; ds2.clipboard = {...obj}; }
+              showToast('📋 コピー', 'success');
+            } else if (hasPenSel) {
+              copyPenStrokes(key); globalClipboard = null;
+              showToast('📋 ペンをコピー', 'success');
+            }
+          } else if (item.action === 'paste') {
+            if (hasClipSVG) pasteObjAtPos(key, longPressTouchPos.nx, longPressTouchPos.ny);
+            else if (hasClipPen) pastePenStrokes(key);
+          }
+        }, { passive: false });
+        menu.appendChild(btn);
+      });
+
+      document.body.appendChild(menu);
+      // 画面外タップで閉じる
+      setTimeout(() => {
+        const dismiss = () => { menu.remove(); document.removeEventListener('touchstart', dismiss); };
+        document.addEventListener('touchstart', dismiss, { passive: true });
+      }, 100);
+    }, 400);
   };
 
   const onLongPressEnd = () => {
@@ -3697,8 +3734,15 @@ function setTool(tool, key) {
   ds.tool = tool;
   ds.selectedId = null;
   ['pen','line','arrow','rect','square','ellipse','select','eraser','scroll'].forEach(t => {
-    document.getElementById(`tool-${t}-${key}`)?.classList.toggle('active', t === tool);
+    const btn = document.getElementById(`tool-${t}-${key}`);
+    if (btn) btn.classList.toggle('active', t === tool);
   });
+  // 長方形/正方形は同じボタン
+  const rectBtn = document.getElementById(`tool-rect-${key}`);
+  if (rectBtn) {
+    rectBtn.classList.toggle('active', tool === 'rect' || tool === 'square');
+    rectBtn.textContent = tool === 'square' ? '■ 正方形' : '▭ 長方形';
+  }
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (canvas) {
     canvas.style.cursor = tool === 'select' ? 'default'
@@ -3706,6 +3750,14 @@ function setTool(tool, key) {
                         : 'crosshair';
   }
   renderSVGObjects(key);
+}
+
+// 長方形/正方形をトグル
+function toggleRectSquare(key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  const next = ds.tool === 'rect' ? 'square' : 'rect';
+  setTool(next, key);
 }
 
 function setPattern(pattern, key, btn) {
