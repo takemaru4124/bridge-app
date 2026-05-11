@@ -2745,8 +2745,12 @@ function setupDrawCanvas(key, imgData) {
 
     // キャンバスリサイズ（ズーム前の自然サイズを基準に）
     const resizeCanvas = () => {
+      // ペン描画中はリサイズをスキップ（ズームリセット防止）
+      if (drawState[key]?.drawing) return;
+
       const inner = document.getElementById(`zoom-inner-${key}`);
-      const prevTransform = inner ? inner.style.transform : '';
+      // zoomStatesから現在のズーム状態を取得（確実に復元するため）
+      const savedZoom = zoomStates[key];
       if (inner) inner.style.transform = 'none';
 
       const rect = baseImg.getBoundingClientRect();
@@ -2761,7 +2765,15 @@ function setupDrawCanvas(key, imgData) {
       canvas.width  = rect.width  * dpr;
       canvas.height = rect.height * dpr;
 
-      if (inner) inner.style.transform = prevTransform;
+      if (inner) {
+        // zoomStatesから確実に復元（prevTransformより確実）
+        if (savedZoom && (savedZoom.scale > 1 || savedZoom.panX !== 0 || savedZoom.panY !== 0)) {
+          inner.style.transformOrigin = '0 0';
+          inner.style.transform = `translate(${savedZoom.panX}px,${savedZoom.panY}px) scale(${savedZoom.scale})`;
+        } else {
+          inner.style.transform = 'none';
+        }
+      }
 
       // savedPenDataを優先、なければstate.drawingsから復元
       const penData = drawState[key]?.savedPenData || state.drawings[key];
