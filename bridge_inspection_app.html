@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.0</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.5</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3115,7 +3115,7 @@ function makeDefs(svg, id, color, pattern) {
   // パターン定義をdefsに追加
   let defs = svg.querySelector('defs');
   if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.prepend(defs); }
-  const pid = `pat-${id}`;
+  const pid = `pat-${String(id).replace('.', '_')}`;
   const existing = defs.querySelector(`#${pid}`);
   if (existing) existing.remove();
 
@@ -3150,6 +3150,7 @@ function makeDefs(svg, id, color, pattern) {
 }
 
 function renderSVGObjects(key, _retry = 0) {
+  try {
   const svg = document.getElementById(`drawsvg-${key}`);
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (!svg || !canvas) return;
@@ -3467,6 +3468,9 @@ function renderSVGObjects(key, _retry = 0) {
       svg.appendChild(editGroup);
     }
   });
+  } catch(e) {
+    console.error('renderSVGObjects error:', e);
+  }
 }
 
 // ===== プレビュー線 =====
@@ -4239,12 +4243,12 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
         };
       }
       if (ds.objects?.length > 0) {
-        const newObjs = ds.objects.map((o, i) => ({...o, id: Date.now() + i * 1000 + Math.random()}));
+        const newObjs = ds.objects.map((o, i) => ({...o, id: Date.now() + i * 1000 + i + 1}));
         drawState[key].objects.push(...newObjs);
       }
       if (ds.penStrokes?.length > 0) {
         if (!drawState[key].penStrokes) drawState[key].penStrokes = [];
-        const newStrokes = ds.penStrokes.map((s, i) => ({...s, id: Date.now() + i * 1000 + Math.random(), points:[...s.points]}));
+        const newStrokes = ds.penStrokes.map((s, i) => ({...s, id: Date.now() + i * 1000 + i + 1, points:[...s.points]}));
         drawState[key].penStrokes.push(...newStrokes);
       }
       if (ds.savedPenData && !drawState[key].savedPenData) {
