@@ -665,7 +665,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.8</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.9</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2066,10 +2066,11 @@ function setupPinchZoom(key) {
       initDist = getDist(e.touches);
       lastScale = scale; lastPanX = panX; lastPanY = panY;
       const wRect = wrapper.getBoundingClientRect();
-      const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      originX = (midX - wRect.left - panX) / scale;
-      originY = (midY - wRect.top  - panY) / scale;
+      const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
+      const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
+      // コンテンツ座標系での中点（スケール変化後もこの点が画面上の同じ位置に来るよう保つ）
+      originX = (midX - panX) / scale;
+      originY = (midY - panY) / scale;
       e.stopPropagation(); e.preventDefault();
     } else if (e.touches.length === 1) {
       const isScrollTool = drawState[key]?.tool === 'scroll';
@@ -2092,21 +2093,17 @@ function setupPinchZoom(key) {
     inner.style.transition = '';
     if (isPinching && e.touches.length === 2) {
       const newDist = getDist(e.touches);
-      const newScale = Math.min(10, Math.max(1, lastScale * newDist / initDist));
-
-      // ピンチ中も中点を追従させる（指の位置が常に拡大縮小の中心）
-      const wRect = wrapper.getBoundingClientRect();
-      const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      // スケール変化に応じてpanを調整（中点が画面上の同じ位置を維持する）
-      const contentX = (midX - wRect.left - lastPanX) / lastScale;
-      const contentY = (midY - wRect.top  - lastPanY) / lastScale;
-      panX = midX - wRect.left - contentX * newScale;
-      panY = midY - wRect.top  - contentY * newScale;
-
-      scale = newScale;
+      scale = Math.min(10, Math.max(1, lastScale * newDist / initDist));
       if (scale <= 1) { panX = 0; panY = 0; }
-      else clampPan();
+      else {
+        // touchstart時に固定した中点を基準にpanを再計算
+        const wRect = wrapper.getBoundingClientRect();
+        const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
+        const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
+        panX = midX - originX * scale;
+        panY = midY - originY * scale;
+        clampPan();
+      }
       applyTransform();
       if (drawState[key]) drawState[key].drawing = false;
       e.stopPropagation(); e.preventDefault();
