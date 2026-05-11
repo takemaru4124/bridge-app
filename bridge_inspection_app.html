@@ -665,7 +665,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.6</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.7</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2914,8 +2914,8 @@ function setupDrawEvents(canvas, svg, key) {
     }
     const ds = drawState[key];
     if (!ds.drawing) return;
-    // 選択ツール以外はズーム中はパンに任せる
-    if (ds.tool !== 'select' && (zoomScales[key] || 1) > 1.05) return;
+    // スクロールツールはwrapper側のpanに任せる
+    if (ds.tool === 'scroll') return;
     e.preventDefault();
     const pos = getPos(e);
     ds.lastX = pos.nx; ds.lastY = pos.ny;
