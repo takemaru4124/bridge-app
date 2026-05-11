@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.4</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.5</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -691,6 +691,14 @@
           <div class="download-item-sub">書き込み図面＋撮影写真をフォルダ分けして保存</div>
         </div>
         <button class="download-btn" style="background:var(--green);">出力</button>
+      </div>
+      <div class="download-item" onclick="debugCheckSaveData()">
+        <span class="download-item-icon">🔍</span>
+        <div class="download-item-body">
+          <div class="download-item-title">保存データを確認（デバッグ）</div>
+          <div class="download-item-sub">現在のdrawStateのキーと件数を表示</div>
+        </div>
+        <button class="download-btn" style="background:#888;">確認</button>
       </div>
       <div class="download-item" onclick="showSDCardModal()">
         <span class="download-item-icon">📷</span>
@@ -3778,6 +3786,27 @@ async function downloadDrawKey(key, pageNum) {
   } catch(err) {
     showToast('❌ ダウンロードに失敗しました', 'error');
   }
+}
+
+function debugCheckSaveData() {
+  const lines = [];
+  lines.push(`=== drawState キー一覧 ===`);
+  for (const [key, ds] of Object.entries(drawState)) {
+    if (!ds) continue;
+    const objCount = ds.objects?.length || 0;
+    const penCount = ds.penStrokes?.length || 0;
+    const hasPen   = !!ds.savedPenData;
+    if (objCount > 0 || penCount > 0 || hasPen) {
+      lines.push(`[${key}] SVG:${objCount}個 ペンストローク:${penCount}個 ペン画像:${hasPen?'あり':'なし'}`);
+    }
+  }
+  if (lines.length === 1) lines.push('（書き込みデータなし）');
+  lines.push('');
+  lines.push(`=== state.drawings キー一覧 ===`);
+  const dkeys = Object.keys(state.drawings||{});
+  if (dkeys.length === 0) lines.push('（なし）');
+  else dkeys.forEach(k => lines.push(k));
+  alert(lines.join('\n'));
 }
 
 // ===== 作業を保存（1タップJSON保存）=====
