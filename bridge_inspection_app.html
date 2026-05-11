@@ -1441,11 +1441,11 @@ async function getPageImage(pageNum, scale = 2.0) {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+    const dataURL = canvas.toDataURL('image/jpeg', 0.85);
     state.pageCache[cacheKey] = dataURL;
     // キャッシュ上限（最大20件）
     const keys = Object.keys(state.pageCache);
-    if (keys.length > 20) delete state.pageCache[keys[0]];
+    if (keys.length > 12) delete state.pageCache[keys[0]];
     return dataURL;
   } catch(e) { return null; }
 }
@@ -2073,7 +2073,8 @@ function setupPinchZoom(key) {
       e.stopPropagation(); e.preventDefault();
     } else if (e.touches.length === 1) {
       const isScrollTool = drawState[key]?.tool === 'scroll';
-      if (isScrollTool || scale > 1.01) {
+      if (isScrollTool) {
+        // 移動ツール：常にパン
         isPanning = true; isPinching = false;
         lastTouchX = e.touches[0].clientX;
         lastTouchY = e.touches[0].clientY;
@@ -2081,6 +2082,7 @@ function setupPinchZoom(key) {
         if (drawState[key]) drawState[key].drawing = false;
         e.stopPropagation(); e.preventDefault();
       } else {
+        // 描画ツール：ズームイン中でもペン描画を優先（パンしない）
         isPanning = false; isPinching = false;
       }
     }
@@ -2829,9 +2831,6 @@ function setupDrawEvents(canvas, svg, key) {
     const ds = drawState[key];
     // スクロールモードはパンに渡す
     if (ds?.tool === 'scroll') return;
-    // 選択ツールはズーム中でも通す（移動・コピペのため）
-    const isSelect = ds?.tool === 'select';
-    if (!isSelect && (zoomScales[key] || 1) > 1.05) return;
     e.preventDefault();
     const pos = getPos(e);
 
@@ -4804,7 +4803,7 @@ async function getPrevPhotoForSlot(slot) {
   if (!slot.prevPage || !slot.crop || !state.pdfDoc) return null;
 
   // ページを高解像度でレンダリング
-  const pageImg = await getPageImage(slot.prevPage, 2.5);
+  const pageImg = await getPageImage(slot.prevPage, 2.0);
   if (!pageImg) return null;
 
   return new Promise(resolve => {
@@ -4825,11 +4824,11 @@ async function getPrevPhotoForSlot(slot) {
       canvas.height = Math.round(sh);
       canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
 
-      const dataURL = canvas.toDataURL('image/jpeg', 0.92);
+      const dataURL = canvas.toDataURL('image/jpeg', 0.85);
       prevPhotoCache[slot.key] = dataURL;
       // キャッシュ上限（最大30件）
       const cacheKeys = Object.keys(prevPhotoCache);
-      if (cacheKeys.length > 30) delete prevPhotoCache[cacheKeys[0]];
+      if (cacheKeys.length > 20) delete prevPhotoCache[cacheKeys[0]];
       resolve(dataURL);
     };
     img.onerror = () => resolve(null);
