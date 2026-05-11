@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.0</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.1</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1992,6 +1992,8 @@ function setupToolbarDrag(key) {
 
 // ズーム状態管理（キーごと）
 const zoomScales = {};
+// panX/panYもキーごとに永続保存（メニュー戻り後も位置を維持）
+const zoomStates = {};
 
 // ===== ピンチズーム + スクロール 全面改善版 =====
 function setupPinchZoom(key) {
@@ -1999,20 +2001,27 @@ function setupPinchZoom(key) {
   const inner   = document.getElementById(`zoom-inner-${key}`);
   if (!wrapper || !inner) return;
 
-  let scale    = 1;
+  // 前回の状態を復元（メニューから戻ってきた場合も位置を維持）
+  const saved  = zoomStates[key] || { scale: 1, panX: 0, panY: 0 };
+  let scale    = saved.scale;
   let originX  = 0, originY  = 0;
-  let panX     = 0, panY     = 0;
+  let panX     = saved.panX, panY = saved.panY;
   let isPinching = false, isPanning = false;
   let initDist = 0, lastScale = 1;
   let lastPanX = 0, lastPanY = 0;
   let lastTouchX = 0, lastTouchY = 0;
 
-  zoomScales[key] = 1;
+  zoomScales[key] = scale;
 
   const getDist = (t) => Math.hypot(
     t[0].clientX - t[1].clientX,
     t[0].clientY - t[1].clientY
   );
+
+  // 保存済み状態があれば即座に復元
+  if (zoomStates[key]) {
+    inner.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
+  }
 
   const clampPan = () => {
     const wRect = wrapper.getBoundingClientRect();
@@ -2026,6 +2035,7 @@ function setupPinchZoom(key) {
     inner.style.transformOrigin = `${originX}px ${originY}px`;
     inner.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
     zoomScales[key] = scale;
+    zoomStates[key] = { scale, panX, panY };
   };
 
   const resetZoom = () => {
@@ -2033,6 +2043,7 @@ function setupPinchZoom(key) {
     scale = 1; panX = 0; panY = 0; originX = 0; originY = 0;
     applyTransform();
     zoomScales[key] = 1;
+    zoomStates[key] = { scale: 1, panX: 0, panY: 0 };
     setTimeout(() => { inner.style.transition = ''; }, 260);
   };
 
