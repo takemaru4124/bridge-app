@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.2</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.3</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -926,6 +926,20 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
     // 写真番号エントリ収集（径間番号も取得）
+    // まずページヘッダ（上部ty<0.15）から径間番号を取得（最も確実）
+    let pageSpan = 1;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].str.replace(/\s/g, '') === '径間番号' && items[i].y / H < 0.15) {
+        for (let j = i + 1; j < Math.min(i + 5, items.length); j++) {
+          if (/^\d+$/.test(items[j].str) && parseInt(items[j].str) > 0) {
+            pageSpan = parseInt(items[j].str);
+            break;
+          }
+        }
+        break;
+      }
+    }
+
     for (let i = 0; i < items.length; i++) {
       if (items[i].str === '写真番号') {
         const tx = items[i].x / W;
@@ -946,24 +960,9 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
         }
         if (!foundNo) continue;
 
-        // 径間番号を取得（同列・直下の径間番号テキストを検索）
-        let span = 1;
-        for (let k = 0; k < items.length; k++) {
-          if (items[k].str !== '径間番号') continue;
-          if (Math.abs(items[k].x / W - tx) > 0.08) continue;
-          if (Math.abs(items[k].y / H - ty) > 0.15) continue;
-          for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
-            if (/^\d+$/.test(items[l].str)) {
-              span = parseInt(items[l].str);
-              break;
-            }
-          }
-          break;
-        }
-
         allEntries.push({
           no: foundNo,
-          span,
+          span: pageSpan,  // ページヘッダから取得した径間番号を使用
           tx,
           globalY: pi + ty,
           pnum,
@@ -1070,6 +1069,20 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
     // 写真番号エントリを抽出（径間番号も取得）
+    // まずページヘッダ（上部ty<0.15）から径間番号を取得（最も確実）
+    let pageSpan = 1;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].str.replace(/\s/g, '') === '径間番号' && items[i].y / H < 0.15) {
+        for (let j = i + 1; j < Math.min(i + 5, items.length); j++) {
+          if (/^\d+$/.test(items[j].str) && parseInt(items[j].str) > 0) {
+            pageSpan = parseInt(items[j].str);
+            break;
+          }
+        }
+        break;
+      }
+    }
+
     const photoEntries = [];
     for (let i = 0; i < items.length; i++) {
       if (items[i].str !== '写真番号') continue;
@@ -1092,28 +1105,7 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
       }
       if (!no) continue;
 
-      // 径間番号を取得: 同じ列（x差0.08以内）で最も近い「径間番号」テキストを検索
-      let span = 1;
-      let bestDist = 9999;
-      for (let k = 0; k < items.length; k++) {
-        if (items[k].str !== '径間番号') continue;
-        const kx = items[k].x / W;
-        const ky = items[k].y / H;
-        if (Math.abs(kx - tx) < 0.08 && Math.abs(ky - ty) < 0.15) {
-          const dist = Math.abs(ky - ty);
-          if (dist < bestDist) {
-            bestDist = dist;
-            for (let l = k + 1; l < Math.min(k + 4, items.length); l++) {
-              if (/^\d+$/.test(items[l].str)) {
-                span = parseInt(items[l].str);
-                break;
-              }
-            }
-          }
-        }
-      }
-
-      photoEntries.push({ no, span, tx, ty });
+      photoEntries.push({ no, span: pageSpan, tx, ty });
     }
 
     if (photoEntries.length === 0) return slots;
