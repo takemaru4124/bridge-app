@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.9</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.0</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1839,6 +1839,7 @@ function buildToolbarHTML(drawKey, pageNum) {
         <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
         <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
         <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${pageNum})">💾 保存</button>
+        <button class="draw-tool-btn" style="background:#444;font-size:10px;" onclick="debugRenderInfo('${drawKey}')">🔍 DEBUG</button>
       </div>
     </div>`;
 }
@@ -3854,6 +3855,31 @@ function debugCheckSaveData() {
   const dkeys = Object.keys(state.drawings||{});
   if (dkeys.length === 0) lines.push('（なし）');
   else dkeys.forEach(k => lines.push(k));
+  alert(lines.join('\n'));
+}
+
+function debugRenderInfo(key) {
+  const canvas = document.getElementById(`drawcanvas-${key}`);
+  const svg    = document.getElementById(`drawsvg-${key}`);
+  const ds     = drawState[key];
+  const lines  = [];
+  lines.push(`key: ${key}`);
+  lines.push(`canvas: ${canvas ? `${canvas.offsetWidth}x${canvas.offsetHeight} (pixel:${canvas.width}x${canvas.height})` : 'なし'}`);
+  lines.push(`svg: ${svg ? `children:${svg.children.length}` : 'なし'}`);
+  lines.push(`objects: ${ds?.objects?.length || 0}個`);
+  if (ds?.objects?.length > 0) {
+    ds.objects.forEach((obj, i) => {
+      const W = canvas?.offsetWidth || 0;
+      const H = canvas?.offsetHeight || 0;
+      lines.push(`[${i}] type:${obj.type} x1:${obj.x1.toFixed(3)} y1:${obj.y1.toFixed(3)} → px(${Math.round(obj.x1*W)},${Math.round(obj.y1*H)})`);
+    });
+  }
+  lines.push(`penStrokes: ${ds?.penStrokes?.length || 0}個`);
+  lines.push(`savedPenData: ${ds?.savedPenData ? '有' : '無'}`);
+  // 強制再描画を試みる
+  lines.push('--- 強制renderSVGObjects実行 ---');
+  renderSVGObjects(key);
+  lines.push(`実行後 svg.children: ${svg?.children?.length || 0}`);
   alert(lines.join('\n'));
 }
 
