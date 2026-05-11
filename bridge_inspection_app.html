@@ -665,7 +665,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v2.0.1</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.0.0</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2084,17 +2084,14 @@ function setupPinchZoom(key) {
   wrapper.addEventListener('touchmove', (e) => {
     inner.style.transition = '';
     if (isPinching && e.touches.length === 2) {
-      const newDist = getDist(e.touches);
+      const newDist  = getDist(e.touches);
       const newScale = Math.min(10, Math.max(1, lastScale * newDist / initDist));
       const wRect = wrapper.getBoundingClientRect();
-      // 2本指の中点（画面座標）
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
-      // 中点がコンテンツ上の同じ点を指すようにpanを算出
-      // コンテンツ座標 = (画面座標 - pan) / scale → 一定
-      // → pan = 画面座標 - コンテンツ座標 * newScale
-      const contentX = (midX - lastPanX) / lastScale;
-      const contentY = (midY - lastPanY) / lastScale;
+      const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
+      const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
+      // 現在のscale/panからコンテンツ座標を求め、newScaleで再配置
+      const contentX = (midX - panX) / scale;
+      const contentY = (midY - panY) / scale;
       panX = midX - contentX * newScale;
       panY = midY - contentY * newScale;
       scale = newScale;
