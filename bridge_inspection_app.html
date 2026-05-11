@@ -3248,11 +3248,9 @@ function setupDrawEvents(canvas, svg, key) {
           menu.remove();
           if (item.action === 'copy') {
             if (hasSVGSel) {
-              const obj = ds2.objects.find(o => o.id === ds2.selectedId);
-              if (obj) { globalClipboard = {...obj}; globalClipboardPen = null; ds2.clipboard = {...obj}; }
-              showToast('📋 コピー', 'success');
+              copySelected(key);
             } else if (hasPenSel) {
-              copyPenStrokes(key); globalClipboard = null;
+              copyPenStrokes(key); globalClipboard = null; globalClipboardMulti = null;
               showToast('📋 ペンをコピー', 'success');
             }
           } else if (item.action === 'paste') {
@@ -3715,6 +3713,31 @@ function renderPreviewShape(key, nx1, ny1, nx2, ny2, color, sizeMM, type, patter
     el.setAttribute('stroke-dasharray','6 4');
     el.setAttribute('fill', fill); el.setAttribute('fill-opacity','0.2');
     svg.appendChild(el);
+  } else if (type === 'square') {
+    // 正方形プレビュー：枠＋対角線2本
+    const bx=Math.min(x1,x2), by=Math.min(y1,y2);
+    const bw=Math.abs(x2-x1), bh=Math.abs(y2-y1);
+    const el = document.createElementNS('http://www.w3.org/2000/svg','rect');
+    el.setAttribute('x',bx); el.setAttribute('y',by);
+    el.setAttribute('width',bw); el.setAttribute('height',bh);
+    el.setAttribute('stroke',color); el.setAttribute('stroke-width',sw);
+    el.setAttribute('stroke-dasharray','6 4');
+    el.setAttribute('fill', fill); el.setAttribute('fill-opacity','0.15');
+    svg.appendChild(el);
+    // 対角線1（左上→右下）
+    const d1 = document.createElementNS('http://www.w3.org/2000/svg','line');
+    d1.setAttribute('x1',bx); d1.setAttribute('y1',by);
+    d1.setAttribute('x2',bx+bw); d1.setAttribute('y2',by+bh);
+    d1.setAttribute('stroke',color); d1.setAttribute('stroke-width', sw * 0.6);
+    d1.setAttribute('stroke-dasharray','3 4'); d1.setAttribute('opacity','0.5');
+    svg.appendChild(d1);
+    // 対角線2（右上→左下）
+    const d2 = document.createElementNS('http://www.w3.org/2000/svg','line');
+    d2.setAttribute('x1',bx+bw); d2.setAttribute('y1',by);
+    d2.setAttribute('x2',bx); d2.setAttribute('y2',by+bh);
+    d2.setAttribute('stroke',color); d2.setAttribute('stroke-width', sw * 0.6);
+    d2.setAttribute('stroke-dasharray','3 4'); d2.setAttribute('opacity','0.5');
+    svg.appendChild(d2);
   } else if (type === 'ellipse') {
     const cx=(x1+x2)/2, cy=(y1+y2)/2;
     const el = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
@@ -3874,29 +3897,58 @@ function undoDraw(key) {
 
 // ページをまたいで使えるグローバルクリップボード
 let globalClipboard = null;
+let globalClipboardMulti = null;
 
 function deleteSelected(key) {
   const ds = drawState[key];
-  // ペンストロークが選択されている場合
-  if (ds?.selectedPenIds?.length) {
-    deletePenStrokes(key);
-    if (!ds.selectedId) { showToast('削除しました',''); return; }
+  if (!ds) return;
+  let deleted = 0;
+  // Undo記録
+  if ((ds.selectedIds?.length > 0) || ds.selectedId || ds.selectedPenIds?.length) {
+    if (!ds.history) ds.history = [];
+    ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+    if (ds.history.length > 50) ds.history.shift();
   }
-  if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
-  ds.objects = ds.objects.filter(o => o.id !== ds.selectedId);
-  ds.selectedId = null;
+  // 複数選択オブジェクト削除
+  const ids = new Set([
+    ...(ds.selectedIds || []),
+    ...(ds.selectedId ? [ds.selectedId] : [])
+  ]);
+  if (ids.size > 0) {
+    deleted += ids.size;
+    ds.objects = ds.objects.filter(o => !ids.has(o.id));
+    ds.selectedId = null;
+    ds.selectedIds = [];
+  }
+  // ペンストローク削除
+  if (ds.selectedPenIds?.length) {
+    deleted += ds.selectedPenIds.length;
+    deletePenStrokes(key);
+  }
+  if (deleted === 0) { showToast('オブジェクトを選択してください','error'); return; }
   renderSVGObjects(key);
-  showToast('削除しました','');
+  showToast(`${deleted}個を削除しました`,'');
 }
 
 function copySelected(key) {
   const ds = drawState[key];
-  if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
-  const obj = ds.objects.find(o => o.id === ds.selectedId);
-  if (obj) {
-    globalClipboard = { ...obj };
-    ds.clipboard = { ...obj };
+  if (!ds) return;
+  const ids = new Set([
+    ...(ds.selectedIds || []),
+    ...(ds.selectedId ? [ds.selectedId] : [])
+  ]);
+  if (ids.size === 0) { showToast('オブジェクトを選択してください','error'); return; }
+  // 複数の場合はglobalClipboardMultiに保存
+  const objs = ds.objects.filter(o => ids.has(o.id));
+  if (objs.length === 1) {
+    globalClipboard = { ...objs[0] };
+    globalClipboardMulti = null;
+  } else {
+    globalClipboardMulti = objs.map(o => ({...o}));
+    globalClipboard = null;
   }
+  globalClipboardPen = null;
+  showToast(`📋 ${objs.length}個をコピー`, 'success');
 }
 
 function pasteObj(key) {
@@ -3922,10 +3974,34 @@ function pasteObj(key) {
 
 // タップ位置に貼り付け
 function pasteObjAtPos(key, nx, ny) {
-  const src = globalClipboard || drawState[key]?.clipboard;
-  if (!src) return;
   const ds = drawState[key];
   if (!ds) return;
+  if (!ds.history) ds.history = [];
+  ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
+  if (ds.history.length > 50) ds.history.shift();
+
+  // 複数コピーの貼り付け
+  if (globalClipboardMulti?.length) {
+    const xs = globalClipboardMulti.map(o => (o.x1+o.x2)/2);
+    const ys = globalClipboardMulti.map(o => (o.y1+o.y2)/2);
+    const cx = xs.reduce((a,b)=>a+b,0)/xs.length;
+    const cy = ys.reduce((a,b)=>a+b,0)/ys.length;
+    const newIds = [];
+    globalClipboardMulti.forEach(src => {
+      const dx = src.x1 - cx + nx - (src.x2-src.x1)/2;
+      const dy = src.y1 - cy + ny - (src.y2-src.y1)/2;
+      const newObj = { ...src, id: Date.now() + Math.random(), x1: src.x1+(nx-cx), y1: src.y1+(ny-cy), x2: src.x2+(nx-cx), y2: src.y2+(ny-cy) };
+      ds.objects.push(newObj);
+      newIds.push(newObj.id);
+    });
+    ds.selectedIds = newIds; ds.selectedId = null;
+    renderSVGObjects(key);
+    showToast(`📌 ${newIds.length}個を貼り付け`, 'success');
+    return;
+  }
+
+  const src = globalClipboard || drawState[key]?.clipboard;
+  if (!src) return;
   const hw = (src.x2 - src.x1) / 2;
   const hh = (src.y2 - src.y1) / 2;
   const newObj = {
