@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.6</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.7</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -850,6 +850,8 @@ const state = {
   pdfDoc: null,
   pdfName: '',
   totalPages: 0,
+  // 様式タイプ: 'standard' | 'kanagawa_municipal'
+  formType: 'standard',
   // ページキャッシュ: { pageNum: imageDataURL }
   pageCache: {},
   // 書き込みデータ: { sectionKey: dataURL }
@@ -1219,7 +1221,8 @@ async function loadPDF(input) {
     document.getElementById('pdf-loaded-info').classList.remove('hidden');
     document.getElementById('btn-survey').disabled = false;
     document.getElementById('btn-inspect').disabled = false;
-    showToast(`✅ ${pdf.numPages}ページ読み込み完了`, 'success');
+    const formLabel = state.formType === 'kanagawa_municipal' ? '神奈川市町村版' : '標準版';
+    showToast(`✅ ${pdf.numPages}ページ読み込み完了（${formLabel}）`, 'success');
   } catch(e) {
     showToast('❌ PDF読み込みエラー', 'error');
   }
@@ -1230,18 +1233,78 @@ async function loadPDF(input) {
 async function detectPageStructure(pdf) {
   const pageMap = {};
 
+  // 神奈川市町村版かどうか判定するフラグ
+  // 「点検調書」を含み「定期点検記録様式」「データ記録様式」を含まないページが存在する場合
+  let kanagawaMunicipalCount = 0;
+  let standardCount = 0;
+
+  // まず全ページをスキャンして様式タイプを判定
+  const pageTexts = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
       const page = await pdf.getPage(p);
       const tc = await page.getTextContent();
       const text = tc.items.map(i => i.str).join('');
+      pageTexts.push({ p, text });
 
-      const isKisoku  = text.includes('定期点検記録様式');
-      const isData    = text.includes('データ記録様式');
+      const isKisoku = text.includes('定期点検記録様式');
+      const isData   = text.includes('データ記録様式');
+      const isChosho = text.includes('点検調書');
+
+      if (isKisoku || isData) standardCount++;
+      else if (isChosho) kanagawaMunicipalCount++;
+    } catch(e) {
+      pageTexts.push({ p, text: '' });
+    }
+  }
+
+  // 神奈川市町村版の判定：「点検調書」ページが存在し、標準様式ページがない
+  const isKanagawaMunicipal = kanagawaMunicipalCount > 0 && standardCount === 0;
+  state.formType = isKanagawaMunicipal ? 'kanagawa_municipal' : 'standard';
+
+  for (const { p, text } of pageTexts) {
+    if (!text) continue;
+
+    if (isKanagawaMunicipal) {
+      // ===== 神奈川市町村版 =====
+      // 「点検調書」を含むページのみ処理
+      if (!text.includes('点検調書')) continue;
+
+      // 長い番号を先にチェック（その１２→その１の順）
+      for (const [key, id] of [
+        ['その１３', 's6'],  // 健全性の診断所見
+        ['その１２', 's5'],  // 状態把握の方法
+        ['その１１', null],  // 対策区分（その他）→ s9s10に含める
+        ['その１０', null],  // 対策区分（主要）→ s9s10に含める
+        ['その９',   null],  // 損傷程度評価総括 → s9s10に含める
+        ['その８',   null],  // 損傷程度評価（その他）→ s9s10に含める
+        ['その７',   null],  // 損傷程度評価（主要）→ s9s10に含める
+        ['その６',   's10'], // 損傷写真
+        ['その５',   's9'],  // 損傷図
+        ['その４',   's4'],  // 要素番号図
+        ['その３',   's3'],  // 現地状況写真
+        ['その２',   's2'],  // 径間一般図
+        ['その１',   's1'],  // 橋梁の諸元
+      ]) {
+        if (text.includes(key)) {
+          if (id === null) break; // スキップ対象
+          if (id === 's1') {
+            if (!pageMap['s1']) pageMap['s1'] = [p];
+          } else {
+            if (!pageMap[id]) pageMap[id] = [];
+            pageMap[id].push(p);
+          }
+          break;
+        }
+      }
+
+    } else {
+      // ===== 国交省版・神奈川県版（標準）=====
+      const isKisoku = text.includes('定期点検記録様式');
+      const isData   = text.includes('データ記録様式');
       if (!isKisoku && !isData) continue;
 
-      // ★ 長い名前を先にチェック（その１０→その１の順）
-      let matched = false;
+      // 長い名前を先にチェック（その１０→その１の順）
       for (const [key, id] of [
         ['その１０', 's10'], ['その９', 's9'],
         ['その６', 's6'],   ['その５', 's5'],
@@ -1249,18 +1312,16 @@ async function detectPageStructure(pdf) {
         ['その２', 's2'],   ['その１', 's1'],
       ]) {
         if (text.includes(key)) {
-          // その１は1ページ目のみ（複数ページ不要）
           if (id === 's1') {
             if (!pageMap['s1']) pageMap['s1'] = [p];
           } else {
             if (!pageMap[id]) pageMap[id] = [];
             pageMap[id].push(p);
           }
-          matched = true;
           break;
         }
       }
-    } catch(e) {}
+    }
   }
 
   state.pageMap = pageMap;
