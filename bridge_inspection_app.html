@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.7</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.8</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -3816,6 +3816,30 @@ function debugCheckSaveData() {
     }
   }
   if (lines.length === 1) lines.push('（書き込みデータなし）');
+
+  // Canvas/SVGのサイズ確認
+  lines.push('');
+  lines.push(`=== Canvas/SVGサイズ確認 ===`);
+  for (const key of Object.keys(drawState)) {
+    const canvas = document.getElementById(`drawcanvas-${key}`);
+    const svg    = document.getElementById(`drawsvg-${key}`);
+    if (canvas || svg) {
+      const cW = canvas?.offsetWidth || 0;
+      const cH = canvas?.offsetHeight || 0;
+      const cBW = canvas?.getBoundingClientRect().width || 0;
+      const ds = drawState[key];
+      const objCount = ds?.objects?.length || 0;
+      if (objCount > 0 || cW > 0) {
+        lines.push(`[${key}] canvas offset:${cW}x${cH} rect:${Math.round(cBW)} SVG:${objCount}個`);
+        if (ds?.objects?.length > 0) {
+          const obj = ds.objects[0];
+          lines.push(`  → 1個目: x1=${obj.x1.toFixed(3)} y1=${obj.y1.toFixed(3)}`);
+          lines.push(`  → px換算: x1=${Math.round(obj.x1*cW)} y1=${Math.round(obj.y1*cH)}`);
+        }
+      }
+    }
+  }
+
   lines.push('');
   lines.push(`=== state.drawings キー一覧 ===`);
   const dkeys = Object.keys(state.drawings||{});
