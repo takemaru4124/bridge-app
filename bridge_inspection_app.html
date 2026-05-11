@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.8.9</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.0</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1014,7 +1014,23 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
       if (best !== null) {
         used.add(best);
         localUsed.add(best);
-        const img  = allImages[best];
+        const img = allImages[best];
+
+        // 同列・直下に隣接する画像があれば高さを合算（市町村版など1スロットが上下2枚に分割されているケース対応）
+        let mergedH = img.h;
+        let bottomEdge = img.y + img.h;
+        for (let idx2 = 0; idx2 < allImages.length; idx2++) {
+          if (used.has(idx2) || localUsed.has(idx2)) continue;
+          const img2 = allImages[idx2];
+          if (img2.pnum !== img.pnum) continue;
+          if (Math.abs(img2.x - img.x) < 0.03 && Math.abs(img2.y - bottomEdge) < 0.01) {
+            used.add(idx2);
+            localUsed.add(idx2);
+            mergedH += img2.h;
+            bottomEdge = img2.y + img2.h;
+          }
+        }
+
         const isNON = entry.no >= 1000;
         slots.push({
           key:      `${prefix}span${span}_p${img.pnum}_${entry.no}`,
@@ -1023,7 +1039,7 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
           required: true, isNON,
           prevPage: img.pnum,
           prevNo:   entry.no,
-          crop: { x: img.x, y: img.y, w: img.w, h: img.h },
+          crop: { x: img.x, y: img.y, w: img.w, h: mergedH },
         });
       }
     }
