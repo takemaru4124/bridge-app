@@ -2076,7 +2076,13 @@ function setupPinchZoom(key) {
         if (drawState[key]) drawState[key].drawing = false;
         e.stopPropagation(); e.preventDefault();
       } else {
-        isPanning = false; isPinching = false;
+        // 指タッチ：描画ツール中でも指はパン可能（Apple Pencilが描画を担う）
+        isPanning = true; isPinching = false;
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        lastPanX = panX; lastPanY = panY;
+        if (drawState[key]) drawState[key].drawing = false;
+        e.stopPropagation(); e.preventDefault();
       }
     }
   }, { passive: false });
@@ -2809,14 +2815,15 @@ function setupDrawEvents(canvas, svg, key) {
 
   const getPos = (e) => {
     const rect  = canvas.getBoundingClientRect();
-    const src   = e.touches ? e.touches[0] : e;
+    // Pointer API: clientX/Yを直接使用（touch/stylus共通）
+    const clientX = e.clientX ?? (e.touches?.[0]?.clientX ?? 0);
+    const clientY = e.clientY ?? (e.touches?.[0]?.clientY ?? 0);
     const dpr   = window.devicePixelRatio || 1;
     const scale = zoomScales[key] || 1;
-    // ズーム後のrect.widthをscaleで割って元のサイズ基準に戻す
     const baseW = rect.width  / scale;
     const baseH = rect.height / scale;
-    const relX  = (src.clientX - rect.left) / scale;
-    const relY  = (src.clientY - rect.top)  / scale;
+    const relX  = (clientX - rect.left) / scale;
+    const relY  = (clientY - rect.top)  / scale;
     return {
       x:  relX * dpr,
       y:  relY * dpr,
@@ -2827,12 +2834,24 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ開始 =====
   const onStart = (e) => {
+    // 指2本のピンチはwrapper側で処理（touchstartで検知）
     if (e.touches && e.touches.length >= 2) {
       if (drawState[key]) drawState[key].drawing = false;
       return;
     }
     const ds = drawState[key];
-    // スクロールモードはパンに渡す
+
+    // Apple Pencilは常に描画、指はスクロール（自動判別）
+    const isStylus = e.pointerType === 'stylus';
+    const isTouch  = e.pointerType === 'touch' || (!e.pointerType && e.touches);
+    if (isTouch && ds?.tool !== 'scroll') {
+      // 指タッチ：スクロールツール以外でも指はパンに渡す
+      // ただしdrawState.tool='scroll'以外でも指はwrapper側のパンに任せる
+      // → wrapperのtouchstartが処理するので何もしない
+      return;
+    }
+
+    // スクロールモード（明示的）もパンに渡す
     if (ds?.tool === 'scroll') return;
     e.preventDefault();
     const pos = getPos(e);
@@ -2913,6 +2932,8 @@ function setupDrawEvents(canvas, svg, key) {
       clearPreviewLine(key);
       return;
     }
+    // 指タッチはwrapper側のパンに任せる
+    if (e.pointerType === 'touch') return;
     const ds = drawState[key];
     if (!ds.drawing) return;
     // スクロールツールはwrapper側のpanに任せる
@@ -3038,6 +3059,8 @@ function setupDrawEvents(canvas, svg, key) {
   // ===== ポインタ終了 =====
   const onEnd = (e) => {
     if (e.touches && e.touches.length >= 1) return;
+    // 指タッチはwrapper側で処理
+    if (e.pointerType === 'touch') return;
     const ds = drawState[key];
     if (!ds.drawing) return;
     ds.drawing = false;
@@ -3222,16 +3245,15 @@ function setupDrawEvents(canvas, svg, key) {
     if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
   };
 
-  canvas.addEventListener('touchstart', onLongPressStart, { passive: true });
-  canvas.addEventListener('touchend',   onLongPressEnd,   { passive: true });
-  canvas.addEventListener('touchmove',  onLongPressEnd,   { passive: true });
+  canvas.addEventListener('pointerdown', onLongPressStart, { passive: true });
+  canvas.addEventListener('pointerup',   onLongPressEnd,   { passive: true });
+  canvas.addEventListener('pointermove', onLongPressEnd,   { passive: true });
 
-  canvas.addEventListener('mousedown',  onStart);
-  canvas.addEventListener('mousemove',  onMove);
-  canvas.addEventListener('mouseup',    onEnd);
-  canvas.addEventListener('touchstart', onStart, { passive:false });
-  canvas.addEventListener('touchmove',  onMove,  { passive:false });
-  canvas.addEventListener('touchend',   onEnd,   { passive:false });
+  // Pointer APIで指/スタイラスを自動判別
+  canvas.addEventListener('pointerdown', onStart, { passive: false });
+  canvas.addEventListener('pointermove', onMove,  { passive: false });
+  canvas.addEventListener('pointerup',   onEnd,   { passive: false });
+  canvas.addEventListener('pointercancel', onEnd, { passive: false });
 }
 
 // ===== SVGオブジェクト描画 =====
