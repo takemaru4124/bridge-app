@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.8</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.7.9</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -2642,7 +2642,6 @@ function setupDrawCanvas(key, imgData) {
         const s = new Image();
         s.onload = () => {
           ctx.drawImage(s, 0, 0, canvas.width, canvas.height);
-          // ペン描画完了後にSVGを描画（順序保証）
           renderSVGObjects(key);
         };
         s.onerror = () => renderSVGObjects(key);
@@ -2651,8 +2650,18 @@ function setupDrawCanvas(key, imgData) {
         renderSVGObjects(key);
       }
     };
-    // 画像レイアウト確定を待つ（120ms→200ms）
-    setTimeout(resizeCanvas, 200);
+    // Canvasサイズが確定するまで待ってから初期化（最大2秒）
+    let retryCount = 0;
+    const tryResizeCanvas = () => {
+      const rect = baseImg.getBoundingClientRect();
+      if (rect.width > 0) {
+        resizeCanvas();
+      } else if (retryCount < 20) {
+        retryCount++;
+        setTimeout(tryResizeCanvas, 100);
+      }
+    };
+    setTimeout(tryResizeCanvas, 100);
     window.addEventListener('resize', () => resizeCanvas());
 
     setupDrawEvents(canvas, svg, key);
@@ -3139,7 +3148,7 @@ function makeDefs(svg, id, color, pattern) {
   return `url(#${pid})`;
 }
 
-function renderSVGObjects(key) {
+function renderSVGObjects(key, _retry = 0) {
   const svg = document.getElementById(`drawsvg-${key}`);
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (!svg || !canvas) return;
@@ -3151,9 +3160,9 @@ function renderSVGObjects(key) {
   const W = canvas.offsetWidth  || canvas.getBoundingClientRect().width;
   const H = canvas.offsetHeight || canvas.getBoundingClientRect().height;
 
-  // W/Hが0の場合はレイアウト未確定→少し待って再試行
+  // W/Hが0の場合はレイアウト未確定→最大10回再試行
   if ((W === 0 || H === 0) && ds.objects?.length > 0) {
-    setTimeout(() => renderSVGObjects(key), 150);
+    if (_retry < 10) setTimeout(() => renderSVGObjects(key, _retry + 1), 150);
     return;
   }
 
