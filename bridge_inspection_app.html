@@ -632,7 +632,7 @@
 
   <!-- バージョン情報 -->
   <div style="text-align:center; padding: 24px 0 16px; color: var(--text2); font-size: 11px; letter-spacing: 0.05em;">
-    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.1</span> &nbsp;|&nbsp; 2026-05-11
+    🌉 橋梁定期点検アプリ &nbsp;|&nbsp; <span style="color:var(--accent); font-weight:700;">v1.9.2</span> &nbsp;|&nbsp; 2026-05-11
   </div>
 
   <!-- データ引き継ぎ・保存 -->
@@ -1709,44 +1709,20 @@ async function renderPhotoLinkButtons(drawKey) {
   const damageSlots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
   if (damageSlots.length === 0) return;
 
-  // ページ番号をdrawKeyから取得（s9s10_p16 → 16）
-  const pageMatch = drawKey.match(/p(\d+)$/);
-  const pnum = pageMatch ? parseInt(pageMatch[1]) : null;
-
-  // PDF.jsでそのページのテキストから写真番号を抽出
-  let pagePhotoNos = null;
-  if (pnum && state.pdfDoc) {
-    try {
-      const page = await state.pdfDoc.getPage(pnum);
-      const tc   = await page.getTextContent();
-      const text = tc.items.map(i => i.str).join(' ');
-      const matches = [...text.matchAll(/写真番号\s*(\d+)/g)];
-      if (matches.length > 0) {
-        pagePhotoNos = new Set(matches.map(m => parseInt(m[1])));
-      }
-    } catch(e) {}
-  }
-
-  // 表示するスロットを絞り込み
-  const targetSlots = pagePhotoNos
-    ? damageSlots.filter(s => pagePhotoNos.has(s.prevNo))
-    : damageSlots; // テキスト抽出できない場合は全表示
-
-  if (targetSlots.length === 0) return;
-
   panel.style.display = 'block';
   btns.innerHTML = '';
 
-  // 径間ごとにグループ化
-  const spans = [...new Set(targetSlots.map(s => s.span || 1))].sort((a,b) => a-b);
+  // 径間ごとにグループ化して表示（常に径間ラベルを表示）
+  const spans = [...new Set(damageSlots.map(s => s.span || 1))].sort((a,b) => a-b);
   spans.forEach(span => {
-    const spanSlots = targetSlots.filter(s => (s.span || 1) === span);
-    if (spans.length > 1) {
-      const label = document.createElement('div');
-      label.style.cssText = 'width:100%;font-size:10px;color:var(--text2);margin-top:4px;';
-      label.textContent = `${span}径間`;
-      btns.appendChild(label);
-    }
+    const spanSlots = damageSlots.filter(s => (s.span || 1) === span);
+
+    // 径間ラベルは常に表示
+    const label = document.createElement('div');
+    label.style.cssText = 'width:100%;font-size:10px;font-weight:700;color:var(--accent);margin-top:6px;margin-bottom:2px;';
+    label.textContent = `${span}径間`;
+    btns.appendChild(label);
+
     spanSlots.forEach(slot => {
       const btn = document.createElement('button');
       const hasPhoto = !!state.photos?.[slot.key];
