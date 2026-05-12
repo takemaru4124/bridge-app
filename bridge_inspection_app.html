@@ -1282,13 +1282,23 @@ async function loadPDF(input) {
   showToast('PDFを読み込んでいます...', '');
   try {
     const arrayBuffer = await file.arrayBuffer();
-    state.pdfData = arrayBuffer.slice(0); // ← 保存用コピー（PDF.jsがtransferするため）
+    state.pdfData = arrayBuffer.slice(0);
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     state.pdfDoc = pdf;
     state.pdfName = file.name.replace('.pdf', '');
     state.totalPages = pdf.numPages;
     state.pageCache = {};
     Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
+
+    // 前のデータを全クリア
+    state.drawings = {};
+    state.photos   = {};
+    Object.keys(drawState).forEach(k => delete drawState[k]);
+    SURVEY_PHOTO_SLOTS  = [];
+    DAMAGE_PHOTO_SLOTS  = [];
+    globalClipboard     = null;
+    globalClipboardMulti = null;
+    globalClipboardPen  = null;
 
     showToast('ページ構成を解析中...', '');
     await detectPageStructure(pdf);
@@ -2912,7 +2922,7 @@ function setupDrawEvents(canvas, svg, key) {
       if (ds.penHistory.length > 30) ds.penHistory.shift();
       // ストローク開始
       if (!ds.penStrokes) ds.penStrokes = [];
-      ds._currentStroke = { id: Date.now(), color: ds.color, sizeMM: ds.sizeMM, points: [{nx:pos.nx, ny:pos.ny}] };
+      ds._currentStroke = { id: Date.now(), color: ds.color, sizeMM: ds.sizeMM, points: [{nx:pos.nx, ny:pos.ny, x:pos.x, y:pos.y}] };
       const ctx = canvas.getContext('2d');
       ctx.beginPath();
       ctx.moveTo(pos.x, pos.y);
@@ -2947,17 +2957,33 @@ function setupDrawEvents(canvas, svg, key) {
       ctx.lineCap     = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = ds.color;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
+
+      // ベジェ曲線で滑らかに描画
+      if (ds._currentStroke && ds._currentStroke.points.length >= 2) {
+        const pts = ds._currentStroke.points;
+        const prev = pts[pts.length - 1];
+        const midX = (prev.x + pos.x) / 2;
+        const midY = (prev.y + pos.y) / 2;
+        ctx.beginPath();
+        ctx.moveTo((pts.length >= 2 ? (pts[pts.length-2].x + prev.x)/2 : prev.x), 
+                   (pts.length >= 2 ? (pts[pts.length-2].y + prev.y)/2 : prev.y));
+        ctx.quadraticCurveTo(prev.x, prev.y, midX, midY);
+        ctx.stroke();
+      } else {
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+      }
+
       // ストローク座標を記録（間引き：前点から一定距離以上の場合のみ）
       if (ds._currentStroke) {
         const pts = ds._currentStroke.points;
         const last = pts[pts.length-1];
-        if (!last || Math.hypot(pos.nx-last.nx, pos.ny-last.ny) > 0.003) {
-          pts.push({nx:pos.nx, ny:pos.ny});
+        if (!last || Math.hypot(pos.nx-last.nx, pos.ny-last.ny) > 0.002) {
+          pts.push({nx:pos.nx, ny:pos.ny, x:pos.x, y:pos.y});
         }
+      }
       }
       // 確実に画面に反映
       requestAnimationFrame(() => {});
