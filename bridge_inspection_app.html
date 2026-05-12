@@ -783,31 +783,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       </div>
       <button onclick="closePhotoPopup()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;flex-shrink:0;">✕ 閉じる</button>
     </div>
-    <!-- 前回写真 -->
-    <div style="padding:12px 16px 0;">
-      <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600;">📷 前回写真</div>
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;height:180px;display:flex;align-items:center;justify-content:center;">
-        <img id="popup-prev-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:none;">
-        <div id="popup-prev-none" style="color:var(--text2);font-size:12px;text-align:center;">
-          <div style="font-size:24px;margin-bottom:4px;">📄</div><div>なし</div>
+    <!-- 写真エリア -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px;flex:1;">
+      <!-- 前回写真 -->
+      <div style="display:flex;flex-direction:column;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;font-weight:600;">📷 前回写真</div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;">
+          <img id="popup-prev-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:none;">
+          <div id="popup-prev-none" style="color:var(--text2);font-size:12px;text-align:center;">
+            <div style="font-size:24px;margin-bottom:4px;">📄</div>
+            <div>なし</div>
+          </div>
         </div>
       </div>
-    </div>
-    <!-- 今回撮影：複数枚 -->
-    <div style="padding:12px 16px;flex:1;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <div style="font-size:11px;color:var(--text2);font-weight:600;">📸 今回撮影</div>
-        <button onclick="popupTakePhoto()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;">＋ 追加撮影</button>
+      <!-- 今回写真 -->
+      <div style="display:flex;flex-direction:column;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;font-weight:600;">📸 今回撮影</div>
+        <div id="popup-current-wrap" style="background:var(--surface2);border:2px dashed var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupTakePhoto()">
+          <img id="popup-current-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:none;">
+          <div id="popup-current-none" style="text-align:center;color:var(--text2);padding:16px;">
+            <div style="font-size:40px;margin-bottom:8px;">📷</div>
+            <div style="font-size:12px;font-weight:600;">タップして撮影</div>
+          </div>
+        </div>
+        <input type="file" id="popup-camera-input" accept="image/*" capture="environment" style="display:none" onchange="popupPhotoSelected(this)">
+        <button id="popup-retake-btn" onclick="popupTakePhoto()" style="display:none;width:100%;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:12px;cursor:pointer;">📷 再撮影</button>
       </div>
-      <!-- サムネイル一覧 -->
-      <div id="popup-photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
-      <!-- 未撮影時 -->
-      <div id="popup-current-none" style="text-align:center;color:var(--text2);padding:32px 16px;border:2px dashed var(--border);border-radius:8px;cursor:pointer;" onclick="popupTakePhoto()">
-        <div style="font-size:40px;margin-bottom:8px;">📷</div>
-        <div style="font-size:12px;font-weight:600;">タップして撮影</div>
-      </div>
     </div>
-    <input type="file" id="popup-camera-input" accept="image/*" capture="environment" style="display:none" onchange="popupPhotoSelected(this)">
     <!-- 前後ナビ -->
     <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border);background:var(--surface);">
       <button onclick="popupNav(-1)" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:12px;font-size:13px;cursor:pointer;">◁ 前の写真</button>
@@ -851,68 +853,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   </div>
 </div>
 
-
-<!-- 追加写真モーダル -->
-<div id="extra-photo-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.85);overflow-y:auto;-webkit-overflow-scrolling:touch;">
-  <div style="background:var(--surface);min-height:100%;display:flex;flex-direction:column;">
-    <!-- ヘッダー -->
-    <div style="position:sticky;top:0;z-index:10;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">
-      <div style="font-size:15px;font-weight:700;color:var(--accent);" id="extra-modal-title">📷 追加写真を撮影</div>
-      <button onclick="closeExtraPhotoModal()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;">✕ 閉じる</button>
-    </div>
-    <div style="padding:16px;display:flex;flex-direction:column;gap:14px;flex:1;">
-
-      <!-- 部材記号 -->
-      <div>
-        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px;">部材記号</div>
-        <div id="extra-buzai-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;"></div>
-        <div id="extra-buzai-selected" style="margin-top:6px;font-size:13px;color:var(--accent);font-weight:700;min-height:20px;"></div>
-      </div>
-
-      <!-- 損傷の種類（本調査のみ） -->
-      <div id="extra-sonsyou-wrap">
-        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px;">損傷の種類</div>
-        <div id="extra-sonsyou-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:8px;"></div>
-        <div id="extra-sonsyou-selected" style="margin-top:6px;font-size:13px;color:var(--accent);font-weight:700;min-height:20px;"></div>
-      </div>
-
-      <!-- 要素番号 -->
-      <div>
-        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px;">要素番号（任意）</div>
-        <input id="extra-element-no" type="text" placeholder="例：A1-Mg-1" style="width:100%;box-sizing:border-box;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;">
-      </div>
-
-      <!-- 写真撮影 -->
-      <div>
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-          <div style="font-size:12px;font-weight:700;color:var(--text2);">写真</div>
-          <button onclick="extraTakePhoto()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">📷 撮影・選択</button>
-        </div>
-        <div id="extra-photo-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;"></div>
-        <div id="extra-photo-none" style="text-align:center;color:var(--text2);padding:20px;border:2px dashed var(--border);border-radius:8px;font-size:12px;" onclick="extraTakePhoto()">
-          タップして撮影
-        </div>
-      </div>
-
-      <!-- 保存ボタン -->
-      <button onclick="saveExtraPhoto()" style="width:100%;padding:14px;background:var(--accent);border:none;color:#fff;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px;">
-        ✅ 保存する
-      </button>
-    </div>
-  </div>
-</div>
-<input type="file" id="extra-camera-input" accept="image/*" capture="environment" style="display:none" onchange="extraPhotoSelected(this)">
-
-<!-- 追加写真一覧モーダル -->
-<div id="extra-list-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.85);overflow-y:auto;-webkit-overflow-scrolling:touch;">
-  <div style="background:var(--surface);min-height:100%;display:flex;flex-direction:column;">
-    <div style="position:sticky;top:0;z-index:10;padding:12px 16px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;">
-      <div style="font-size:15px;font-weight:700;color:var(--accent);">📋 追加写真一覧</div>
-      <button onclick="document.getElementById('extra-list-modal').style.display='none'" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;">✕ 閉じる</button>
-    </div>
-    <div id="extra-list-content" style="padding:16px;display:flex;flex-direction:column;gap:12px;"></div>
-  </div>
-</div>
 
 <!-- トースト -->
 <div id="toast"></div>
@@ -965,7 +905,6 @@ const state = {
   totalPages: 0,
   // 様式タイプ: 'standard' | 'kanagawa_municipal'
   formType: 'standard',
-  extraPhotos: [],  // 追加写真リスト
   // ページキャッシュ: { pageNum: imageDataURL }
   pageCache: {},
   // 書き込みデータ: { sectionKey: dataURL }
@@ -992,43 +931,6 @@ const MENU_INSPECT_EXTRA = [
 const MENU_SURVEY  = MENU_SURVEY_BASE;
 const MENU_INSPECT = [...MENU_SURVEY_BASE, ...MENU_INSPECT_EXTRA];
 
-
-// ===== 追加写真機能 定数 =====
-const BUZAI_LIST = [
-  // 上部構造
-  { code:'Mg', name:'主桁' }, { code:'Cr', name:'横桁' }, { code:'St', name:'縦桁' },
-  { code:'Ds', name:'床版' }, { code:'Cf', name:'対傾構' }, { code:'Lu', name:'上横構' },
-  { code:'Ll', name:'下横構' }, { code:'Bt', name:'上下弦材' }, { code:'Dt', name:'斜材・垂直材' },
-  { code:'Ar', name:'アーチリブ' }, { code:'Sa', name:'補剛桁' }, { code:'Ha', name:'吊り材' },
-  { code:'Sc', name:'斜材（斜張橋）' }, { code:'Gb', name:'ゲルバー部' },
-  // 下部構造
-  { code:'Pw', name:'橋脚 柱部・壁部' }, { code:'Pb', name:'橋脚 梁部' },
-  { code:'Pc', name:'隅角部・接合部' }, { code:'Ap', name:'橋台 胸壁' },
-  { code:'Ac', name:'橋台 竪壁' }, { code:'Aw', name:'橋台 翼壁' },
-  { code:'Ff', name:'基礎 フーチング' },
-  // 支承・路上
-  { code:'Bh', name:'支承本体' }, { code:'Ba', name:'アンカーボルト' },
-  { code:'Bm', name:'沓座モルタル' }, { code:'Bc', name:'台座コンクリート' },
-  { code:'Ra', name:'高欄' }, { code:'Gf', name:'防護柵' }, { code:'Fg', name:'地覆' },
-  { code:'Ej', name:'伸縮装置' }, { code:'Pm', name:'舗装' },
-  { code:'Dr', name:'排水ます' }, { code:'Dp', name:'排水管' },
-  { code:'Sx', name:'その他' },
-];
-
-const SONSYOU_LIST = [
-  { no:1,  name:'腐食' }, { no:2,  name:'亀裂' }, { no:3,  name:'ゆるみ・脱落' },
-  { no:4,  name:'破断' }, { no:5,  name:'防食機能の劣化' }, { no:6,  name:'ひびわれ' },
-  { no:7,  name:'剥離・鉄筋露出' }, { no:8,  name:'漏水・遊離石灰' }, { no:9,  name:'抜け落ち' },
-  { no:10, name:'補修・補強材の損傷' }, { no:11, name:'床版ひびわれ' }, { no:12, name:'うき' },
-  { no:13, name:'遊間の異常' }, { no:14, name:'路面の凹凸' }, { no:15, name:'舗装の異常' },
-  { no:16, name:'支承部の機能障害' }, { no:17, name:'その他' }, { no:18, name:'定着部の異常' },
-  { no:19, name:'変色・劣化' }, { no:20, name:'漏水・滞水' }, { no:21, name:'異常な音・振動' },
-  { no:22, name:'異常なたわみ' }, { no:23, name:'変形・欠損' }, { no:24, name:'土砂詰まり' },
-  { no:25, name:'沈下・移動・傾斜' }, { no:26, name:'洗掘' },
-];
-
-// 追加写真データ（state.extraPhotos に保存）
-// state.extraPhotos = [ { id, mode, buzaiCode, buzaiName, sonsyouNo, sonsyouName, elementNo, photos:[] }, ... ]
 
 // ===== 写真スロット（動的生成）=====
 // PDF読み込み後にbuildPhotoSlotsFromPDFで生成される
@@ -1416,7 +1318,6 @@ async function loadPDF(input) {
     // 前のデータを全クリア
     state.drawings    = {};
     state.photos      = {};
-    state.extraPhotos = [];
     Object.keys(drawState).forEach(k => delete drawState[k]);
     SURVEY_PHOTO_SLOTS  = [];
     DAMAGE_PHOTO_SLOTS  = [];
@@ -1631,29 +1532,6 @@ function showMenuContent() {
     el.onclick = () => openSection(item);
     list.appendChild(el);
   });
-
-  // 追加写真ボタンをメニュー下部に追加
-  const extraBtn = document.createElement('div');
-  extraBtn.style.cssText = 'padding:12px 16px;';
-  extraBtn.innerHTML = `
-    <button onclick="openExtraPhotoModal()" style="
-      width:100%; padding:14px; border-radius:10px;
-      background:var(--surface2); border:2px dashed var(--border);
-      color:var(--text); font-size:14px; font-weight:700; cursor:pointer;
-      display:flex; align-items:center; justify-content:center; gap:8px;
-    ">
-      <span style="font-size:20px;">📷</span>
-      <span>追加写真を撮影する</span>
-      ${(state.extraPhotos||[]).length > 0 ? `<span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 8px;font-size:12px;">${state.extraPhotos.length}件</span>` : ''}
-    </button>
-    ${(state.extraPhotos||[]).length > 0 ? `
-    <button onclick="openExtraPhotoList()" style="
-      width:100%; margin-top:8px; padding:10px; border-radius:8px;
-      background:none; border:1px solid var(--border);
-      color:var(--text2); font-size:12px; cursor:pointer;
-    ">📋 追加写真一覧を見る（${state.extraPhotos.length}件）</button>` : ''}
-  `;
-  list.appendChild(extraBtn);
 
   updatePhotoProgress();
 }
@@ -1971,244 +1849,26 @@ function updatePopup(slot) {
     });
   }
 
-  // 今回撮影（複数枚）
-  renderPopupPhotoGrid(slot.key);
-}
-
-function renderPopupPhotoGrid(slotKey) {
-  const grid = document.getElementById('popup-photo-grid');
-  const none = document.getElementById('popup-current-none');
-  if (!grid || !none) return;
-
-  // state.photosはキーごとに配列で保存
-  const photos = getPhotosForSlot(slotKey); // string[]
-  grid.innerHTML = '';
-
-  if (photos.length === 0) {
-    grid.style.display = 'none';
-    none.style.display = 'block';
-    return;
-  }
-  grid.style.display = 'grid';
-  none.style.display = 'none';
-
-  photos.forEach((src, idx) => {
-    const cell = document.createElement('div');
-    cell.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--surface2);';
-    const img = document.createElement('img');
-    img.src = src;
-    img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-    // 削除ボタン
-    const del = document.createElement('button');
-    del.textContent = '✕';
-    del.style.cssText = 'position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);border:none;color:#fff;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;line-height:1;';
-    del.onclick = (ev) => { ev.stopPropagation(); deletePopupPhoto(slotKey, idx); };
-    // 拡大表示
-    img.onclick = () => popupFullscreen(src);
-    cell.appendChild(img);
-    cell.appendChild(del);
-    grid.appendChild(cell);
-  });
-}
-
-// slotKeyの写真を配列で取得
-function getPhotosForSlot(slotKey) {
-  const val = state.photos?.[slotKey];
-  if (!val) return [];
-  if (Array.isArray(val)) return val;
-  return [val]; // 旧データ互換
-}
-
-// 写真削除
-function deletePopupPhoto(slotKey, idx) {
-  const photos = getPhotosForSlot(slotKey);
-  photos.splice(idx, 1);
-  state.photos[slotKey] = photos.length > 0 ? photos : undefined;
-  renderPopupPhotoGrid(slotKey);
-  updateProgress();
-}
-
-// フルスクリーン表示
-function popupFullscreen(src) {
-  const ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.95);display:flex;align-items:center;justify-content:center;';
-  const img = document.createElement('img');
-  img.src = src;
-  img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;';
-  ov.appendChild(img);
-  ov.onclick = () => ov.remove();
-  document.body.appendChild(ov);
-}
-
-
-// ===== 追加写真機能 =====
-let _extraBuzaiCode  = null;
-let _extraSonsyouNo  = null;
-let _extraTempPhotos = []; // 撮影中の一時写真
-
-function openExtraPhotoModal() {
-  _extraBuzaiCode  = null;
-  _extraSonsyouNo  = null;
-  _extraTempPhotos = [];
-  document.getElementById('extra-element-no').value = '';
-
-  const isInspect = state.mode === 'inspect';
-  document.getElementById('extra-modal-title').textContent = isInspect ? '📷 追加写真（本調査）' : '📷 追加写真（踏査）';
-  document.getElementById('extra-sonsyou-wrap').style.display = isInspect ? 'block' : 'none';
-
-  // 部材記号グリッド
-  const bg = document.getElementById('extra-buzai-grid');
-  bg.innerHTML = '';
-  BUZAI_LIST.forEach(b => {
-    const btn = document.createElement('button');
-    btn.dataset.code = b.code;
-    btn.style.cssText = 'padding:6px 4px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:11px;cursor:pointer;text-align:center;line-height:1.3;';
-    btn.innerHTML = `<div style="font-weight:700;color:var(--accent)">${b.code}</div><div style="font-size:10px;color:var(--text2)">${b.name}</div>`;
-    btn.onclick = () => selectBuzai(b.code, b.name);
-    bg.appendChild(btn);
-  });
-
-  // 損傷種別グリッド
-  const sg = document.getElementById('extra-sonsyou-grid');
-  sg.innerHTML = '';
-  SONSYOU_LIST.forEach(s => {
-    const btn = document.createElement('button');
-    btn.dataset.no = s.no;
-    btn.style.cssText = 'padding:7px 6px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:11px;cursor:pointer;text-align:left;';
-    btn.innerHTML = `<span style="color:var(--accent);font-weight:700;">⑮`.replace('⑮', `<span style="background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px;font-size:10px;margin-right:4px;">${s.no}</span>`) + `${s.name}</span>`;
-    btn.onclick = () => selectSonsyou(s.no, s.name);
-    sg.appendChild(btn);
-  });
-
-  document.getElementById('extra-buzai-selected').textContent = '';
-  document.getElementById('extra-sonsyou-selected').textContent = '';
-  renderExtraTempPhotos();
-  document.getElementById('extra-photo-modal').style.display = 'block';
-}
-
-function selectBuzai(code, name) {
-  _extraBuzaiCode = code;
-  document.getElementById('extra-buzai-selected').textContent = `✅ 選択中: ${code} (${name})`;
-  document.querySelectorAll('#extra-buzai-grid button').forEach(btn => {
-    btn.style.borderColor = btn.dataset.code === code ? 'var(--accent)' : 'var(--border)';
-    btn.style.background  = btn.dataset.code === code ? 'rgba(74,158,255,0.15)' : 'var(--surface2)';
-  });
-}
-
-function selectSonsyou(no, name) {
-  _extraSonsyouNo = no;
-  document.getElementById('extra-sonsyou-selected').textContent = `✅ 選択中: ⑲${no} ${name}`.replace('⑲', `${no} `);
-  document.querySelectorAll('#extra-sonsyou-grid button').forEach(btn => {
-    const sel = parseInt(btn.dataset.no) === no;
-    btn.style.borderColor = sel ? 'var(--accent)' : 'var(--border)';
-    btn.style.background  = sel ? 'rgba(74,158,255,0.15)' : 'var(--surface2)';
-  });
-}
-
-function extraTakePhoto() {
-  document.getElementById('extra-camera-input').click();
-}
-
-function extraPhotoSelected(input) {
-  if (!input.files[0]) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    _extraTempPhotos.push(e.target.result);
-    renderExtraTempPhotos();
-  };
-  reader.readAsDataURL(input.files[0]);
-  input.value = '';
-}
-
-function renderExtraTempPhotos() {
-  const grid = document.getElementById('extra-photo-grid');
-  const none = document.getElementById('extra-photo-none');
-  grid.innerHTML = '';
-  if (_extraTempPhotos.length === 0) {
-    none.style.display = 'block'; return;
-  }
-  none.style.display = 'none';
-  _extraTempPhotos.forEach((src, idx) => {
-    const cell = document.createElement('div');
-    cell.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--surface2);';
-    const img = document.createElement('img');
-    img.src = src;
-    img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
-    const del = document.createElement('button');
-    del.textContent = '✕';
-    del.style.cssText = 'position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);border:none;color:#fff;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;';
-    del.onclick = () => { _extraTempPhotos.splice(idx, 1); renderExtraTempPhotos(); };
-    cell.appendChild(img); cell.appendChild(del);
-    grid.appendChild(cell);
-  });
-}
-
-function saveExtraPhoto() {
-  if (!_extraBuzaiCode) { showToast('部材記号を選択してください', 'error'); return; }
-  if (state.mode === 'inspect' && !_extraSonsyouNo) { showToast('損傷の種類を選択してください', 'error'); return; }
-  if (_extraTempPhotos.length === 0) { showToast('写真を1枚以上撮影してください', 'error'); return; }
-
-  const buzai   = BUZAI_LIST.find(b => b.code === _extraBuzaiCode);
-  const sonsyou = _extraSonsyouNo ? SONSYOU_LIST.find(s => s.no === _extraSonsyouNo) : null;
-  const entry = {
-    id:          Date.now(),
-    mode:        state.mode,
-    buzaiCode:   _extraBuzaiCode,
-    buzaiName:   buzai?.name || '',
-    sonsyouNo:   _extraSonsyouNo || null,
-    sonsyouName: sonsyou?.name || '',
-    elementNo:   document.getElementById('extra-element-no').value.trim(),
-    photos:      [..._extraTempPhotos],
-  };
-  if (!state.extraPhotos) state.extraPhotos = [];
-  state.extraPhotos.push(entry);
-
-  showToast(`✅ 追加写真を保存しました（${entry.photos.length}枚）`, 'success');
-  closeExtraPhotoModal();
-  showMenuContent(); // メニューのバッジを更新
-}
-
-function closeExtraPhotoModal() {
-  document.getElementById('extra-photo-modal').style.display = 'none';
-}
-
-function openExtraPhotoList() {
-  const content = document.getElementById('extra-list-content');
-  content.innerHTML = '';
-  if (!state.extraPhotos || state.extraPhotos.length === 0) {
-    content.innerHTML = '<div style="text-align:center;color:var(--text2);padding:32px;">追加写真はありません</div>';
+  // 今回写真
+  const currentImg  = document.getElementById('popup-current-img');
+  const currentNone = document.getElementById('popup-current-none');
+  const retakeBtn   = document.getElementById('popup-retake-btn');
+  const photo = state.photos?.[slot.key];
+  if (photo) {
+    currentImg.src = Array.isArray(photo) ? photo[0] : photo;
+    currentImg.style.display = 'block';
+    currentNone.style.display = 'none';
+    retakeBtn.style.display = 'block';
   } else {
-    state.extraPhotos.forEach((entry, idx) => {
-      const card = document.createElement('div');
-      card.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;';
-      const label = entry.mode === 'inspect'
-        ? `${entry.buzaiCode} (${entry.buzaiName}) ／ ⑰${entry.sonsyouNo} ${entry.sonsyouName}`.replace('⑰', `${entry.sonsyouNo} `)
-        : `${entry.buzaiCode} (${entry.buzaiName})`;
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:var(--accent);">${label}</div>
-            ${entry.elementNo ? `<div style="font-size:11px;color:var(--text2);">要素番号: ${entry.elementNo}</div>` : ''}
-            <div style="font-size:11px;color:var(--text2);">${entry.mode === 'inspect' ? '本調査' : '踏査'} ／ ${entry.photos.length}枚</div>
-          </div>
-          <button onclick="deleteExtraPhoto(${idx})" style="background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">削除</button>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
-          ${entry.photos.map(src => `<div style="border-radius:6px;overflow:hidden;aspect-ratio:4/3;"><img src="${src}" style="width:100%;height:100%;object-fit:cover;" onclick="popupFullscreen('${src}')"></div>`).join('')}
-        </div>
-      `;
-      content.appendChild(card);
-    });
+    currentImg.style.display = 'none';
+    currentNone.style.display = 'flex';
+    retakeBtn.style.display = 'none';
   }
-  document.getElementById('extra-list-modal').style.display = 'block';
 }
 
-function deleteExtraPhoto(idx) {
-  if (!confirm('この追加写真を削除しますか？')) return;
-  state.extraPhotos.splice(idx, 1);
-  openExtraPhotoList();
-  showMenuContent();
-}
+
+
+
 
 function closePhotoPopup() {
   document.getElementById('photo-popup').style.display = 'none';
@@ -2229,49 +1889,15 @@ function popupPhotoSelected(input) {
   const reader = new FileReader();
   reader.onload = (e) => {
     if (!state.photos) state.photos = {};
-    // 配列で管理（複数枚対応）
-    const existing = getPhotosForSlot(_popupSlotKey);
-    existing.push(e.target.result);
-    state.photos[_popupSlotKey] = existing;
+    state.photos[_popupSlotKey] = e.target.result;
 
     // ポップアップを更新
     const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
     const slot  = slots.find(s => s.key === _popupSlotKey);
     if (slot) updatePopup(slot);
-
-    // 損傷写真タブのカードを再描画
-    const card = document.querySelector(`.photo-card[data-slot="${_popupSlotKey}"]`);
-    if (card && slot) {
-      const sectionKey = card.dataset.section || 's10';
-      card.outerHTML = renderPhotoSlot(slot, sectionKey);
-      // 前回写真も再ロード
-      const newCard = document.querySelector(`.photo-card[data-slot="${_popupSlotKey}"]`);
-      if (newCard && slot.prevPage) {
-        getPrevPhotoForSlot(slot).then(imgData => {
-          if (!imgData) return;
-          const wrap = document.getElementById(`prev-wrap-${slot.key}`);
-          if (wrap) {
-            wrap.innerHTML = '';
-            const img = document.createElement('img');
-            img.src = imgData;
-            img.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-            wrap.appendChild(img);
-          }
-        });
-      }
-    }
-
-    // 写真番号ボタンの色を更新（緑色に）
-    document.querySelectorAll('[id^="photo-link-btns-"]').forEach(el => {
-      const drawKey = el.id.replace('photo-link-btns-', '');
-      renderPhotoLinkButtons(drawKey);
-    });
-
-    updatePhotoProgress();
-    showToast('✅ 写真を保存しました', 'success');
+    reader.readAsDataURL(input.files[0]);
   };
   reader.readAsDataURL(input.files[0]);
-  input.value = '';
 }
 
 function popupNav(dir) {
@@ -4720,18 +4346,14 @@ async function exportForAirDrop() {
     showToast('📸 写真を圧縮中...', '');
     const compressedPhotos = {};
     for (const [k, v] of Object.entries(state.photos || {})) {
-      // 複数枚対応：配列の場合は全枚圧縮
-      const arr = Array.isArray(v) ? v : (v ? [v] : []);
-      const compressed = [];
-      for (const dataURL of arr) {
-        if (!dataURL) continue;
-        try {
-          compressed.push(await compressImage(dataURL, 0.7, 1200));
-        } catch(e) {
-          compressed.push(dataURL);
-        }
+      const dataURL = typeof v === 'string' ? v : v?.dataURL;
+      if (!dataURL) continue;
+      try {
+        const compressed = await compressImage(dataURL, 0.7, 1200);
+        compressedPhotos[k] = compressed;
+      } catch(e) {
+        compressedPhotos[k] = dataURL;
       }
-      if (compressed.length > 0) compressedPhotos[k] = compressed;
     }
 
     showToast('📦 ファイル生成中...', '');
@@ -5127,9 +4749,7 @@ async function assignSDPhoto() {
     const reader = new FileReader();
     reader.onload = (e) => {
       if (!state.photos) state.photos = {};
-      const existing = getPhotosForSlot(slotKey);
-      existing.push(e.target.result);
-      state.photos[slotKey] = existing;
+      state.photos[slotKey] = e.target.result;
       showToast('✅ 写真を割り当てました！', 'success');
       document.getElementById('sd-assign-panel').style.display = 'none';
       _sdSelectedPhotoURL = null;
@@ -5391,30 +5011,31 @@ async function getPrevPhotoForSlot(slot) {
 }
 
 function renderPhotoSlot(slot, sectionKey) {
-  const photos = getPhotosForSlot(slot.key); // 配列
-  const hasPhoto = photos.length > 0;
+  const photoRaw = state.photos[slot.key];
+  const photoURL = typeof photoRaw === 'string' ? photoRaw
+                 : Array.isArray(photoRaw) ? photoRaw[0]
+                 : photoRaw?.dataURL;
+  const photo    = photoURL ? { dataURL: photoURL } : null;
   const reqBadge = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
   const nonBadge = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
-  const statusHTML = hasPhoto
-    ? `<span class="photo-card-status done">✓ ${photos.length}枚撮影済</span>`
+  const statusHTML = photo
+    ? '<span class="photo-card-status done">✓ 撮影済</span>'
     : '<span class="photo-card-status">未撮影</span>';
 
-  // 今回撮影エリア：1枚目サムネイル＋枚数バッジ
-  const currHTML = hasPhoto
-    ? `<div class="photo-half-done" onclick="openPhotoPopup('${slot.key}')">
-         <img src="${photos[0]}">
-         ${photos.length > 1 ? `<span style="position:absolute;bottom:4px;right:4px;background:rgba(0,0,0,0.7);color:#fff;font-size:11px;border-radius:4px;padding:2px 6px;">${photos.length}枚</span>` : ''}
+  const currHTML = photo
+    ? `<div class="photo-half-done" onclick="capturePhoto('${slot.key}','${sectionKey}')">
+         <img src="${photo.dataURL}">
+         <div class="photo-half-retake"><span>📷 再撮影</span></div>
          <span class="photo-half-check">✓</span>
+         <span class="photo-half-delete" onclick="event.stopPropagation();deletePhotoAndRefresh('${slot.key}','${sectionKey}')">✕</span>
        </div>`
-    : `<div class="photo-half-shoot" onclick="openPhotoPopup('${slot.key}')">
+    : `<div class="photo-half-shoot" onclick="capturePhoto('${slot.key}','${sectionKey}')">
          <div class="cam-icon">📷</div>
          <div class="cam-hint">タップして撮影</div>
        </div>`;
 
-  // 前回写真番号ラベル
   const prevLabel = slot.prevNo != null ? `前回 No.${slot.prevNo}` : '前回';
 
-  // 前回写真エリア
   const prevHTML = slot.prevPage
     ? `<div class="photo-half-noprev" id="prev-wrap-${slot.key}">
          <span>⏳</span><p>読込中</p>
