@@ -1045,12 +1045,9 @@ function openPhotoLightbox(slotKey, idx, sectionKey) {
 }
 
 function updateLightbox() {
-  const photoRaw = state.photos[_lightboxSlotKey];
-  const list = Array.isArray(photoRaw) ? photoRaw
-             : photoRaw?.dataURL ? [photoRaw]
-             : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+  const list = normalizePhotoList(state.photos[_lightboxSlotKey]);
   const p = list[_lightboxPhotoIdx];
-  const dataURL = typeof p === 'string' ? p : p?.dataURL;
+  const dataURL = p?.dataURL ?? (typeof p === 'string' ? p : null);
   if (dataURL) document.getElementById('lb-img').src = dataURL;
   document.getElementById('lb-counter').textContent =
     list.length > 1 ? `${_lightboxPhotoIdx + 1} / ${list.length}` : '';
@@ -1060,10 +1057,7 @@ function updateLightbox() {
 }
 
 function lbNav(dir) {
-  const photoRaw = state.photos[_lightboxSlotKey];
-  const list = Array.isArray(photoRaw) ? photoRaw
-             : photoRaw?.dataURL ? [photoRaw]
-             : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+  const list = normalizePhotoList(state.photos[_lightboxSlotKey]);
   _lightboxPhotoIdx = Math.max(0, Math.min(list.length - 1, _lightboxPhotoIdx + dir));
   updateLightbox();
 }
@@ -4019,22 +4013,50 @@ async function getPrevPhotoForSlot(slot) {
   });
 }
 
-function renderPhotoSlot(slot, sectionKey) {
-  const photoRaw = state.photos[slot.key];
+// スロットごとの表示中インデックス管理
+const _slotPhotoIndex = {};
 
-  // 複数枚対応：配列に正規化
-  let photoList = [];
-  if (Array.isArray(photoRaw)) {
-    photoList = photoRaw.map(p => (typeof p === 'string' ? { dataURL: p } : p)).filter(p => p?.dataURL);
-  } else if (typeof photoRaw === 'string' && photoRaw) {
-    photoList = [{ dataURL: photoRaw }];
-  } else if (photoRaw?.dataURL) {
-    photoList = [photoRaw];
+function setSlotPhotoIndex(slotKey, idx) {
+  _slotPhotoIndex[slotKey] = idx;
+  const wrap = document.getElementById(`curr-photo-wrap-${slotKey}`);
+  if (!wrap) return;
+  const photoRaw = state.photos[slotKey];
+  const list = normalizePhotoList(photoRaw);
+  if (!list.length) return;
+  const safeIdx = Math.max(0, Math.min(list.length - 1, idx));
+  _slotPhotoIndex[slotKey] = safeIdx;
+
+  const img    = wrap.querySelector('.curr-photo-img');
+  const dots   = wrap.querySelector('.curr-photo-dots');
+  const delBtn = wrap.querySelector('.curr-photo-delete');
+  const prevBtn = wrap.querySelector('.curr-nav-prev');
+  const nextBtn = wrap.querySelector('.curr-nav-next');
+
+  if (img)    img.src = list[safeIdx].dataURL;
+  if (delBtn) delBtn.setAttribute('onclick', `deleteOnePhoto('${slotKey}',${safeIdx},event)`);
+  if (prevBtn) prevBtn.style.display = safeIdx > 0 ? 'flex' : 'none';
+  if (nextBtn) nextBtn.style.display = safeIdx < list.length - 1 ? 'flex' : 'none';
+  if (dots) {
+    dots.innerHTML = list.map((_, i) =>
+      `<span class="curr-dot${i === safeIdx ? ' active' : ''}"></span>`).join('');
   }
+}
 
+function normalizePhotoList(raw) {
+  if (Array.isArray(raw))          return raw.map(p => typeof p === 'string' ? { dataURL: p } : p).filter(p => p?.dataURL);
+  if (typeof raw === 'string' && raw) return [{ dataURL: raw }];
+  if (raw?.dataURL)                return [raw];
+  return [];
+}
+
+function renderPhotoSlot(slot, sectionKey) {
+  const photoRaw  = state.photos[slot.key];
+  const photoList = normalizePhotoList(photoRaw);
   const hasPhoto  = photoList.length > 0;
-  const reqBadge  = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
-  const nonBadge  = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
+  const curIdx    = hasPhoto ? Math.min(_slotPhotoIndex[slot.key] || 0, photoList.length - 1) : 0;
+
+  const reqBadge   = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
+  const nonBadge   = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
   const countBadge = hasPhoto && photoList.length > 1
     ? `<span class="photo-card-badge-count">${photoList.length}枚</span>` : '';
   const statusHTML = hasPhoto
@@ -4044,19 +4066,24 @@ function renderPhotoSlot(slot, sectionKey) {
   // 今回撮影エリア
   let currHTML;
   if (hasPhoto) {
-    // サムネイル一覧（横スクロール）
-    const thumbsHTML = photoList.map((p, idx) => `
-      <div class="photo-thumb-wrap">
-        <img src="${p.dataURL}" onclick="openPhotoLightbox('${slot.key}',${idx},'${sectionKey}')">
-        <span class="photo-thumb-delete" onclick="event.stopPropagation();deleteOnePhoto('${slot.key}',${idx},'${sectionKey}')">✕</span>
-      </div>`).join('');
+    const dotsHTML = photoList.length > 1
+      ? `<div class="curr-photo-dots">${photoList.map((_, i) => `<span class="curr-dot${i === curIdx ? ' active' : ''}"></span>`).join('')}</div>`
+      : '';
+    const prevNav = curIdx > 0
+      ? `<button class="curr-nav curr-nav-prev" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx - 1})">‹</button>` : `<button class="curr-nav curr-nav-prev" style="display:none" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx - 1})">‹</button>`;
+    const nextNav = curIdx < photoList.length - 1
+      ? `<button class="curr-nav curr-nav-next" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx + 1})">›</button>` : `<button class="curr-nav curr-nav-next" style="display:none" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx + 1})">›</button>`;
 
     currHTML = `
-      <div class="photo-multi-area">
-        <div class="photo-thumbs-row">${thumbsHTML}</div>
-        <div class="photo-multi-actions">
-          <button class="photo-btn-add" onclick="capturePhoto('${slot.key}','${sectionKey}',true)">📷 追加</button>
-          <button class="photo-btn-retake" onclick="capturePhoto('${slot.key}','${sectionKey}',false)">🔄 撮り直し</button>
+      <div class="photo-half-done" id="curr-photo-wrap-${slot.key}">
+        <img class="curr-photo-img" src="${photoList[curIdx].dataURL}" onclick="openPhotoLightbox('${slot.key}',${curIdx},'${sectionKey}')">
+        <span class="curr-photo-delete photo-half-delete" onclick="event.stopPropagation();deleteOnePhoto('${slot.key}',${curIdx},event)">✕</span>
+        <span class="photo-half-check">✓</span>
+        ${prevNav}${nextNav}
+        ${dotsHTML}
+        <div class="curr-photo-actions">
+          <button class="photo-btn-add"    onclick="event.stopPropagation();capturePhoto('${slot.key}','${sectionKey}',true)">📷 追加</button>
+          <button class="photo-btn-retake" onclick="event.stopPropagation();capturePhoto('${slot.key}','${sectionKey}',false)">🔄 撮り直し</button>
         </div>
       </div>`;
   } else {
@@ -4068,14 +4095,9 @@ function renderPhotoSlot(slot, sectionKey) {
   }
 
   const prevLabel = slot.prevNo != null ? `前回 No.${slot.prevNo}` : '前回';
-
-  const prevHTML = slot.prevPage
-    ? `<div class="photo-half-noprev" id="prev-wrap-${slot.key}">
-         <span>⏳</span><p>読込中</p>
-       </div>`
-    : `<div class="photo-half-noprev">
-         <span>—</span><p>前回写真なし</p>
-       </div>`;
+  const prevHTML  = slot.prevPage
+    ? `<div class="photo-half-noprev" id="prev-wrap-${slot.key}"><span>⏳</span><p>読込中</p></div>`
+    : `<div class="photo-half-noprev"><span>—</span><p>前回写真なし</p></div>`;
 
   return `
     <div class="photo-card" data-slot="${slot.key}" data-section="${sectionKey}">
@@ -4115,14 +4137,28 @@ async function loadPrevPhotosForSlots(slots) {
   }
 }
 
-function deleteOnePhoto(slotKey, idx, sectionKey) {
+function deleteOnePhoto(slotKey, idx, evtOrSectionKey) {
+  // 引数がEventの場合はsectionKeyをDOMから取得
+  let sectionKey;
+  if (evtOrSectionKey && typeof evtOrSectionKey === 'object' && evtOrSectionKey.target) {
+    const card = evtOrSectionKey.target.closest('[data-section]');
+    sectionKey = card ? card.dataset.section : null;
+  } else {
+    sectionKey = evtOrSectionKey;
+  }
   const existing = state.photos[slotKey];
   if (Array.isArray(existing)) {
     existing.splice(idx, 1);
-    if (existing.length === 0) delete state.photos[slotKey];
+    if (existing.length === 0) {
+      delete state.photos[slotKey];
+    } else {
+      // 削除後インデックスを調整
+      _slotPhotoIndex[slotKey] = Math.min(idx, existing.length - 1);
+    }
   } else {
     delete state.photos[slotKey];
   }
+  if (!sectionKey) return;
   const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
   const grid = document.getElementById(`photo-grid-${sectionKey}`);
   if (grid) {
@@ -4194,19 +4230,36 @@ function applyPhotoFilter(sectionKey) {
 }
 
 // ===== カメラ撮影 =====
+// バグ修正：input要素を毎回新規作成することでonchange競合・スロット混入を防ぐ
 function capturePhoto(slotKey, sectionKey, addMode = false) {
-  const input = document.getElementById('camera-input');
-  state.currentPhotoTarget = { slotKey, sectionKey, addMode };
-  input.onchange = handleCameraCapture;
+  // 古いinputを削除
+  const old = document.getElementById('camera-input');
+  if (old) old.remove();
+
+  // 新しいinputを生成
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.id = 'camera-input';
+  input.style.display = 'none';
+
+  // この時点のslotKey/sectionKey/addModeをクロージャで固定（競合防止）
+  input.addEventListener('change', function(e) {
+    handleCameraCapture(e, slotKey, sectionKey, addMode);
+    // 使用後は削除
+    input.remove();
+  }, { once: true });
+
+  document.body.appendChild(input);
   input.click();
 }
 
-function handleCameraCapture(e) {
+function handleCameraCapture(e, slotKey, sectionKey, addMode) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    const { slotKey, sectionKey, addMode } = state.currentPhotoTarget;
     const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
     const slot = slots.find(s => s.key === slotKey) || { key: slotKey || `auto_${Date.now()}`, label: '撮影写真', required: false };
 
@@ -4214,14 +4267,11 @@ function handleCameraCapture(e) {
     const newEntry = { dataURL: ev.target.result, label: slot.label };
     const existing = state.photos[slot.key];
     if (addMode && Array.isArray(existing)) {
-      // 追加モード：既存配列に追加
       existing.push(newEntry);
     } else if (addMode && existing) {
-      // 既存が旧形式（オブジェクト/文字列）の場合は配列に変換して追加
       const prev = typeof existing === 'string' ? { dataURL: existing, label: slot.label } : existing;
       state.photos[slot.key] = [prev, newEntry];
     } else {
-      // 通常撮影（1枚目 or 再撮影）：配列で初期化
       state.photos[slot.key] = [newEntry];
     }
     showToast('✅ 写真を保存しました', 'success');
@@ -4231,9 +4281,13 @@ function handleCameraCapture(e) {
     if (grid) {
       grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
       loadPrevPhotosForSlots(slots);
+      // 撮影したスロットを現在のインデックスに合わせる
+      const list = state.photos[slot.key];
+      if (Array.isArray(list) && list.length > 1) {
+        setSlotPhotoIndex(slot.key, list.length - 1);
+      }
     }
     updatePhotoProgress();
-    // 撮り忘れ警告を更新
     const missing = slots.filter(s => s.required && !state.photos[s.key]);
     const alert = document.getElementById(`missing-${sectionKey}`);
     if (alert) {
@@ -4246,7 +4300,6 @@ function handleCameraCapture(e) {
     }
   };
   reader.readAsDataURL(file);
-  e.target.value = '';
 }
 
 function deletePhoto(slotKey, sectionKey) {
@@ -4688,53 +4741,57 @@ currentScreen = 'home';
       padding:1px 7px; margin-left:4px; vertical-align:middle;
     }
 
-    /* 複数枚エリア */
-    .photo-multi-area {
-      display:flex; flex-direction:column; gap:6px;
-      width:100%; height:100%; padding:6px;
-      box-sizing:border-box;
+    /* 撮影済みエリア（前回写真と同サイズ・フルサイズ表示） */
+    .photo-half-done {
+      position:relative; width:100%; height:100%;
+      background:#000; overflow:hidden;
+      display:flex; flex-direction:column;
+    }
+    .curr-photo-img {
+      width:100%; flex:1; object-fit:cover;
+      display:block; cursor:pointer;
+      min-height:0;
     }
 
-    /* サムネイル横スクロール */
-    .photo-thumbs-row {
-      display:flex; gap:6px; overflow-x:auto;
-      -webkit-overflow-scrolling:touch;
-      padding-bottom:2px; flex:1; align-items:flex-start;
-    }
-    .photo-thumbs-row::-webkit-scrollbar { height:4px; }
-    .photo-thumbs-row::-webkit-scrollbar-thumb { background:var(--border,#ccc); border-radius:2px; }
-
-    /* 各サムネイル */
-    .photo-thumb-wrap {
-      position:relative; flex-shrink:0;
-      width:72px; height:72px; border-radius:6px; overflow:hidden;
-      border:2px solid var(--border,#e5e7eb);
-      background:#000;
-    }
-    .photo-thumb-wrap img {
-      width:100%; height:100%; object-fit:cover; display:block;
-      cursor:pointer;
-    }
-    .photo-thumb-delete {
-      position:absolute; top:2px; right:2px;
-      background:rgba(0,0,0,0.65); color:#fff;
-      border-radius:50%; width:18px; height:18px;
+    /* 左右ナビボタン */
+    .curr-nav {
+      position:absolute; top:50%; transform:translateY(-50%);
+      background:rgba(0,0,0,0.5); color:#fff;
+      border:none; border-radius:50%;
+      width:36px; height:36px; font-size:22px;
       display:flex; align-items:center; justify-content:center;
-      font-size:10px; cursor:pointer; line-height:1;
+      cursor:pointer; z-index:3; padding:0; line-height:1;
     }
+    .curr-nav-prev { left:6px; }
+    .curr-nav-next { right:6px; }
 
-    /* 追加・撮り直しボタン行 */
-    .photo-multi-actions {
-      display:flex; gap:6px;
+    /* ドットインジケーター */
+    .curr-photo-dots {
+      display:flex; justify-content:center; gap:5px;
+      padding:4px 0; background:rgba(0,0,0,0.45);
+    }
+    .curr-dot {
+      width:7px; height:7px; border-radius:50%;
+      background:rgba(255,255,255,0.4); display:inline-block;
+    }
+    .curr-dot.active { background:#fff; }
+
+    /* 追加・撮り直しボタン行（写真下部） */
+    .curr-photo-actions {
+      display:flex; gap:0;
     }
     .photo-btn-add, .photo-btn-retake {
-      flex:1; padding:7px 4px; border:none; border-radius:8px;
+      flex:1; padding:8px 4px; border:none;
       font-size:12px; font-weight:700; cursor:pointer;
       white-space:nowrap;
     }
     .photo-btn-add    { background:var(--green,#22c55e); color:#fff; }
-    .photo-btn-retake { background:var(--surface,#f3f4f6); color:var(--text,#111);
-                        border:1px solid var(--border,#e5e7eb); }
+    .photo-btn-retake { background:var(--surface,#374151); color:#fff; }
+
+    /* 削除ボタン（右上） */
+    .curr-photo-delete {
+      position:absolute; top:6px; right:6px; z-index:4;
+    }
 
     /* ライトボックス */
     #photo-lightbox {
