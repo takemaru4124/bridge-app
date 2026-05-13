@@ -603,7 +603,7 @@ function removePDF() {
 }
 
 // ===== ページ画像取得（キャッシュ付き）=====
-async function getPageImage(pageNum, scale = 2.0) {
+async function getPageImage(pageNum, scale = 3.0) {
   const cacheKey = `${pageNum}_${scale}`;
   if (state.pageCache[cacheKey]) return state.pageCache[cacheKey];
   if (!state.pdfDoc) return null;
@@ -614,11 +614,11 @@ async function getPageImage(pageNum, scale = 2.0) {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-    const dataURL = canvas.toDataURL('image/jpeg', 0.85);
+    const dataURL = canvas.toDataURL('image/jpeg', 0.92);
     state.pageCache[cacheKey] = dataURL;
-    // キャッシュ上限（最大20件）
+    // キャッシュ上限（高解像度化に伴いメモリ節約のため8件に削減）
     const keys = Object.keys(state.pageCache);
-    if (keys.length > 12) delete state.pageCache[keys[0]];
+    if (keys.length > 8) delete state.pageCache[keys[0]];
     return dataURL;
   } catch(e) { return null; }
 }
@@ -4532,7 +4532,7 @@ async function downloadAll() {
     if (pnum && state.pdfDoc) {
       try {
         const page = await state.pdfDoc.getPage(pnum);
-        const vp   = page.getViewport({ scale: 2.0 });
+        const vp   = page.getViewport({ scale: 3.0 });
         pdfPageCanvas = document.createElement('canvas');
         pdfPageCanvas.width  = vp.width;
         pdfPageCanvas.height = vp.height;
