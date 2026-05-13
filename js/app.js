@@ -985,9 +985,12 @@ function updatePopup(slot) {
   const currentImg  = document.getElementById('popup-current-img');
   const currentNone = document.getElementById('popup-current-none');
   const retakeBtn   = document.getElementById('popup-retake-btn');
-  const photo = state.photos?.[slot.key];
-  if (photo) {
-    currentImg.src = Array.isArray(photo) ? photo[0] : photo;
+  const photoRaw = state.photos?.[slot.key];
+  const photoURL = Array.isArray(photoRaw) ? photoRaw[0]?.dataURL ?? photoRaw[0]
+                 : typeof photoRaw === 'string' ? photoRaw
+                 : photoRaw?.dataURL;
+  if (photoURL) {
+    currentImg.src = photoURL;
     currentImg.style.display = 'block';
     currentNone.style.display = 'none';
     retakeBtn.style.display = 'block';
@@ -1012,6 +1015,65 @@ function closePhotoPopup() {
   });
 }
 
+// ===== 写真ライトボックス（グリッドサムネイル拡大表示）=====
+let _lightboxSlotKey   = null;
+let _lightboxPhotoIdx  = 0;
+let _lightboxSectionKey = null;
+
+function openPhotoLightbox(slotKey, idx, sectionKey) {
+  _lightboxSlotKey    = slotKey;
+  _lightboxPhotoIdx   = idx;
+  _lightboxSectionKey = sectionKey;
+
+  let lb = document.getElementById('photo-lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'photo-lightbox';
+    lb.innerHTML = `
+      <div class="lb-overlay" onclick="closePhotoLightbox()"></div>
+      <div class="lb-content">
+        <button class="lb-close" onclick="closePhotoLightbox()">✕</button>
+        <button class="lb-nav lb-prev" onclick="lbNav(-1)">‹</button>
+        <img id="lb-img" src="">
+        <button class="lb-nav lb-next" onclick="lbNav(1)">›</button>
+        <div id="lb-counter" class="lb-counter"></div>
+      </div>`;
+    document.body.appendChild(lb);
+  }
+  updateLightbox();
+  lb.style.display = 'flex';
+}
+
+function updateLightbox() {
+  const photoRaw = state.photos[_lightboxSlotKey];
+  const list = Array.isArray(photoRaw) ? photoRaw
+             : photoRaw?.dataURL ? [photoRaw]
+             : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+  const p = list[_lightboxPhotoIdx];
+  const dataURL = typeof p === 'string' ? p : p?.dataURL;
+  if (dataURL) document.getElementById('lb-img').src = dataURL;
+  document.getElementById('lb-counter').textContent =
+    list.length > 1 ? `${_lightboxPhotoIdx + 1} / ${list.length}` : '';
+  const lb = document.getElementById('photo-lightbox');
+  lb.querySelector('.lb-prev').style.display = (_lightboxPhotoIdx > 0) ? 'flex' : 'none';
+  lb.querySelector('.lb-next').style.display = (_lightboxPhotoIdx < list.length - 1) ? 'flex' : 'none';
+}
+
+function lbNav(dir) {
+  const photoRaw = state.photos[_lightboxSlotKey];
+  const list = Array.isArray(photoRaw) ? photoRaw
+             : photoRaw?.dataURL ? [photoRaw]
+             : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+  _lightboxPhotoIdx = Math.max(0, Math.min(list.length - 1, _lightboxPhotoIdx + dir));
+  updateLightbox();
+}
+
+function closePhotoLightbox() {
+  const lb = document.getElementById('photo-lightbox');
+  if (lb) lb.style.display = 'none';
+  _lightboxSlotKey = null;
+}
+
 function popupTakePhoto() {
   document.getElementById('popup-camera-input').click();
 }
@@ -1021,13 +1083,13 @@ function popupPhotoSelected(input) {
   const reader = new FileReader();
   reader.onload = (e) => {
     if (!state.photos) state.photos = {};
-    state.photos[_popupSlotKey] = e.target.result;
+    // 配列形式で保存
+    state.photos[_popupSlotKey] = [{ dataURL: e.target.result, label: '' }];
 
     // ポップアップを更新
     const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
     const slot  = slots.find(s => s.key === _popupSlotKey);
     if (slot) updatePopup(slot);
-    reader.readAsDataURL(input.files[0]);
   };
   reader.readAsDataURL(input.files[0]);
 }
@@ -3959,27 +4021,51 @@ async function getPrevPhotoForSlot(slot) {
 
 function renderPhotoSlot(slot, sectionKey) {
   const photoRaw = state.photos[slot.key];
-  const photoURL = typeof photoRaw === 'string' ? photoRaw
-                 : Array.isArray(photoRaw) ? photoRaw[0]
-                 : photoRaw?.dataURL;
-  const photo    = photoURL ? { dataURL: photoURL } : null;
-  const reqBadge = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
-  const nonBadge = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
-  const statusHTML = photo
-    ? '<span class="photo-card-status done">✓ 撮影済</span>'
-    : '<span class="photo-card-status">未撮影</span>';
 
-  const currHTML = photo
-    ? `<div class="photo-half-done" onclick="capturePhoto('${slot.key}','${sectionKey}')">
-         <img src="${photo.dataURL}">
-         <div class="photo-half-retake"><span>📷 再撮影</span></div>
-         <span class="photo-half-check">✓</span>
-         <span class="photo-half-delete" onclick="event.stopPropagation();deletePhotoAndRefresh('${slot.key}','${sectionKey}')">✕</span>
-       </div>`
-    : `<div class="photo-half-shoot" onclick="capturePhoto('${slot.key}','${sectionKey}')">
-         <div class="cam-icon">📷</div>
-         <div class="cam-hint">タップして撮影</div>
-       </div>`;
+  // 複数枚対応：配列に正規化
+  let photoList = [];
+  if (Array.isArray(photoRaw)) {
+    photoList = photoRaw.map(p => (typeof p === 'string' ? { dataURL: p } : p)).filter(p => p?.dataURL);
+  } else if (typeof photoRaw === 'string' && photoRaw) {
+    photoList = [{ dataURL: photoRaw }];
+  } else if (photoRaw?.dataURL) {
+    photoList = [photoRaw];
+  }
+
+  const hasPhoto  = photoList.length > 0;
+  const reqBadge  = slot.required ? '<span class="photo-card-badge-req">必須</span>' : '';
+  const nonBadge  = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
+  const countBadge = hasPhoto && photoList.length > 1
+    ? `<span class="photo-card-badge-count">${photoList.length}枚</span>` : '';
+  const statusHTML = hasPhoto
+    ? `<span class="photo-card-status done">✓ 撮影済</span>`
+    : `<span class="photo-card-status">未撮影</span>`;
+
+  // 今回撮影エリア
+  let currHTML;
+  if (hasPhoto) {
+    // サムネイル一覧（横スクロール）
+    const thumbsHTML = photoList.map((p, idx) => `
+      <div class="photo-thumb-wrap">
+        <img src="${p.dataURL}" onclick="openPhotoLightbox('${slot.key}',${idx},'${sectionKey}')">
+        <span class="photo-thumb-delete" onclick="event.stopPropagation();deleteOnePhoto('${slot.key}',${idx},'${sectionKey}')">✕</span>
+      </div>`).join('');
+
+    currHTML = `
+      <div class="photo-multi-area">
+        <div class="photo-thumbs-row">${thumbsHTML}</div>
+        <div class="photo-multi-actions">
+          <button class="photo-btn-add" onclick="capturePhoto('${slot.key}','${sectionKey}',true)">📷 追加</button>
+          <button class="photo-btn-retake" onclick="capturePhoto('${slot.key}','${sectionKey}',false)">🔄 撮り直し</button>
+        </div>
+      </div>`;
+  } else {
+    currHTML = `
+      <div class="photo-half-shoot" onclick="capturePhoto('${slot.key}','${sectionKey}')">
+        <div class="cam-icon">📷</div>
+        <div class="cam-hint">タップして撮影</div>
+      </div>`;
+  }
 
   const prevLabel = slot.prevNo != null ? `前回 No.${slot.prevNo}` : '前回';
 
@@ -3994,7 +4080,7 @@ function renderPhotoSlot(slot, sectionKey) {
   return `
     <div class="photo-card" data-slot="${slot.key}" data-section="${sectionKey}">
       <div class="photo-card-header">
-        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}</div>
+        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}${countBadge}</div>
         ${statusHTML}
       </div>
       <div class="photo-pair">
@@ -4027,6 +4113,24 @@ async function loadPrevPhotosForSlots(slots) {
       wrap.style.display = 'block';
     }
   }
+}
+
+function deleteOnePhoto(slotKey, idx, sectionKey) {
+  const existing = state.photos[slotKey];
+  if (Array.isArray(existing)) {
+    existing.splice(idx, 1);
+    if (existing.length === 0) delete state.photos[slotKey];
+  } else {
+    delete state.photos[slotKey];
+  }
+  const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+  const grid = document.getElementById(`photo-grid-${sectionKey}`);
+  if (grid) {
+    grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
+    loadPrevPhotosForSlots(slots);
+  }
+  updatePhotoProgress();
+  showToast('写真を削除しました', '');
 }
 
 function deletePhotoAndRefresh(slotKey, sectionKey) {
@@ -4090,9 +4194,9 @@ function applyPhotoFilter(sectionKey) {
 }
 
 // ===== カメラ撮影 =====
-function capturePhoto(slotKey, sectionKey) {
+function capturePhoto(slotKey, sectionKey, addMode = false) {
   const input = document.getElementById('camera-input');
-  state.currentPhotoTarget = { slotKey, sectionKey };
+  state.currentPhotoTarget = { slotKey, sectionKey, addMode };
   input.onchange = handleCameraCapture;
   input.click();
 }
@@ -4102,11 +4206,24 @@ function handleCameraCapture(e) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = (ev) => {
-    const { slotKey, sectionKey } = state.currentPhotoTarget;
+    const { slotKey, sectionKey, addMode } = state.currentPhotoTarget;
     const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
     const slot = slots.find(s => s.key === slotKey) || { key: slotKey || `auto_${Date.now()}`, label: '撮影写真', required: false };
 
-    state.photos[slot.key] = { dataURL: ev.target.result, label: slot.label };
+    // 複数枚対応：配列で管理
+    const newEntry = { dataURL: ev.target.result, label: slot.label };
+    const existing = state.photos[slot.key];
+    if (addMode && Array.isArray(existing)) {
+      // 追加モード：既存配列に追加
+      existing.push(newEntry);
+    } else if (addMode && existing) {
+      // 既存が旧形式（オブジェクト/文字列）の場合は配列に変換して追加
+      const prev = typeof existing === 'string' ? { dataURL: existing, label: slot.label } : existing;
+      state.photos[slot.key] = [prev, newEntry];
+    } else {
+      // 通常撮影（1枚目 or 再撮影）：配列で初期化
+      state.photos[slot.key] = [newEntry];
+    }
     showToast('✅ 写真を保存しました', 'success');
 
     // グリッドを更新
@@ -4234,13 +4351,20 @@ async function downloadAll() {
     if (surveyPhotos.length > 0) {
       const f3 = zip.folder('その３_現地状況写真');
       for (const key of surveyPhotos) {
-        const photo   = state.photos[key];
-        const dataURL = typeof photo === 'string' ? photo : photo?.dataURL;
-        if (!dataURL?.startsWith('data:image')) continue;
+        const photoRaw = state.photos[key];
         const slot  = SURVEY_PHOTO_SLOTS.find(s => s.key === key);
-        const label = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
-        const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
-        f3.file(`${label}.${ext}`, dataURL.split(',')[1], { base64: true });
+        const baseLabel = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
+        // 複数枚対応：配列に正規化
+        const list = Array.isArray(photoRaw) ? photoRaw
+                   : photoRaw?.dataURL ? [photoRaw]
+                   : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+        list.forEach((p, idx) => {
+          const dataURL = typeof p === 'string' ? p : p?.dataURL;
+          if (!dataURL?.startsWith('data:image')) return;
+          const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
+          const fname = list.length === 1 ? `${baseLabel}.${ext}` : `${baseLabel}_${idx + 1}.${ext}`;
+          f3.file(fname, dataURL.split(',')[1], { base64: true });
+        });
       }
     }
 
@@ -4250,13 +4374,21 @@ async function downloadAll() {
       const f10d = zip.folder('その１０_損傷写真/損傷');
       const f10n = zip.folder('その１０_損傷写真/NON');
       for (const key of damagePhotos) {
-        const photo   = state.photos[key];
-        const dataURL = typeof photo === 'string' ? photo : photo?.dataURL;
-        if (!dataURL?.startsWith('data:image')) continue;
+        const photoRaw = state.photos[key];
         const slot  = DAMAGE_PHOTO_SLOTS.find(s => s.key === key);
-        const label = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
-        const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
-        (slot?.isNON ? f10n : f10d).file(`${label}.${ext}`, dataURL.split(',')[1], { base64: true });
+        const baseLabel = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
+        const folder = (slot?.isNON ? f10n : f10d);
+        // 複数枚対応：配列に正規化
+        const list = Array.isArray(photoRaw) ? photoRaw
+                   : photoRaw?.dataURL ? [photoRaw]
+                   : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+        list.forEach((p, idx) => {
+          const dataURL = typeof p === 'string' ? p : p?.dataURL;
+          if (!dataURL?.startsWith('data:image')) return;
+          const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
+          const fname = list.length === 1 ? `${baseLabel}.${ext}` : `${baseLabel}_${idx + 1}.${ext}`;
+          folder.file(fname, dataURL.split(',')[1], { base64: true });
+        });
       }
     }
 
@@ -4545,3 +4677,103 @@ uz.addEventListener('drop', e => {
 document.getElementById('screen-home').classList.add('is-active');
 currentScreen = 'home';
 
+// ===== 複数枚写真UI用スタイル追加 =====
+(function injectMultiPhotoStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    /* 枚数バッジ */
+    .photo-card-badge-count {
+      display:inline-block; background:#3b82f6; color:#fff;
+      font-size:10px; font-weight:700; border-radius:10px;
+      padding:1px 7px; margin-left:4px; vertical-align:middle;
+    }
+
+    /* 複数枚エリア */
+    .photo-multi-area {
+      display:flex; flex-direction:column; gap:6px;
+      width:100%; height:100%; padding:6px;
+      box-sizing:border-box;
+    }
+
+    /* サムネイル横スクロール */
+    .photo-thumbs-row {
+      display:flex; gap:6px; overflow-x:auto;
+      -webkit-overflow-scrolling:touch;
+      padding-bottom:2px; flex:1; align-items:flex-start;
+    }
+    .photo-thumbs-row::-webkit-scrollbar { height:4px; }
+    .photo-thumbs-row::-webkit-scrollbar-thumb { background:var(--border,#ccc); border-radius:2px; }
+
+    /* 各サムネイル */
+    .photo-thumb-wrap {
+      position:relative; flex-shrink:0;
+      width:72px; height:72px; border-radius:6px; overflow:hidden;
+      border:2px solid var(--border,#e5e7eb);
+      background:#000;
+    }
+    .photo-thumb-wrap img {
+      width:100%; height:100%; object-fit:cover; display:block;
+      cursor:pointer;
+    }
+    .photo-thumb-delete {
+      position:absolute; top:2px; right:2px;
+      background:rgba(0,0,0,0.65); color:#fff;
+      border-radius:50%; width:18px; height:18px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:10px; cursor:pointer; line-height:1;
+    }
+
+    /* 追加・撮り直しボタン行 */
+    .photo-multi-actions {
+      display:flex; gap:6px;
+    }
+    .photo-btn-add, .photo-btn-retake {
+      flex:1; padding:7px 4px; border:none; border-radius:8px;
+      font-size:12px; font-weight:700; cursor:pointer;
+      white-space:nowrap;
+    }
+    .photo-btn-add    { background:var(--green,#22c55e); color:#fff; }
+    .photo-btn-retake { background:var(--surface,#f3f4f6); color:var(--text,#111);
+                        border:1px solid var(--border,#e5e7eb); }
+
+    /* ライトボックス */
+    #photo-lightbox {
+      display:none; position:fixed; inset:0; z-index:9999;
+      align-items:center; justify-content:center;
+    }
+    .lb-overlay {
+      position:absolute; inset:0; background:rgba(0,0,0,0.85);
+    }
+    .lb-content {
+      position:relative; z-index:1; display:flex;
+      align-items:center; justify-content:center;
+      max-width:96vw; max-height:90vh;
+    }
+    #lb-img {
+      max-width:90vw; max-height:85vh;
+      object-fit:contain; border-radius:8px; display:block;
+    }
+    .lb-close {
+      position:fixed; top:16px; right:16px;
+      background:rgba(255,255,255,0.15); color:#fff;
+      border:none; border-radius:50%; width:36px; height:36px;
+      font-size:18px; cursor:pointer; display:flex;
+      align-items:center; justify-content:center; z-index:2;
+    }
+    .lb-nav {
+      position:fixed; top:50%; transform:translateY(-50%);
+      background:rgba(255,255,255,0.15); color:#fff;
+      border:none; border-radius:50%; width:44px; height:44px;
+      font-size:28px; cursor:pointer; display:flex;
+      align-items:center; justify-content:center; z-index:2;
+    }
+    .lb-prev { left:12px; }
+    .lb-next { right:12px; }
+    .lb-counter {
+      position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+      color:#fff; font-size:14px; font-weight:700;
+      background:rgba(0,0,0,0.45); padding:3px 12px; border-radius:12px;
+    }
+  `;
+  document.head.appendChild(style);
+})();
