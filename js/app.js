@@ -4105,8 +4105,8 @@ function renderPhotoViewer(item, tabs, content) {
   // ④ ヘッダー（枚数表示）
   const captured = slots.filter(s => state.photos[s.key]).length;
   const headerHTML = `
-    <div class="photo-section-header" style="display:flex;align-items:center;justify-content:space-between;">
-      <h3 style="margin:0;">📸 写真記録 <span style="font-size:12px;color:var(--text2);font-weight:400">${captured}/${slots.length}枚</span></h3>
+    <div class="photo-section-header">
+      <h3>📸 写真記録 <span style="font-size:12px;color:var(--text2);font-weight:400">${captured}/${slots.length}枚</span></h3>
       <button onclick="startExtraPhoto('${item.key}')" style="background:var(--accent,#3b82f6);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📷 写真追加</button>
     </div>
     <p style="font-size:11px;color:var(--accent);margin-bottom:10px;font-weight:700;">
@@ -4418,7 +4418,6 @@ function deletePhotoAndRefresh(slotKey, sectionKey) {
 const photoFilter = { span: 0, type: 'damage' };
 
 function filterBySpan(span, sectionKey, evt) {
-  // タブのactiveを切り替え
   const allSpanTabs = evt?.target?.closest('.photo-filter-tabs')
     ?.querySelectorAll('.photo-filter-tab');
   allSpanTabs?.forEach(t => t.classList.remove('active'));
@@ -4426,10 +4425,11 @@ function filterBySpan(span, sectionKey, evt) {
 
   photoFilter.span = span;
   applyPhotoFilter(sectionKey);
+  // 追加写真グリッドも径間連動
+  renderExtraPhotoGrid(sectionKey);
 }
 
 function filterPhotos(filter, sectionKey, evt) {
-  // NON/損傷タブのactiveを切り替え
   const allTypeTabs = evt?.target?.closest('.photo-filter-tabs')
     ?.querySelectorAll('.photo-filter-tab');
   allTypeTabs?.forEach(t => t.classList.remove('active'));
@@ -5135,6 +5135,21 @@ function openExtraPhotoModal(sectionKey, dataURL) {
   if (existing) existing.remove();
 
   const isS3 = sectionKey === 's3';
+
+  // 径間リストを取得
+  const slots = isS3 ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+  const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
+  // 現在選択中の径間をデフォルトに
+  const currentSpan = photoFilter.span || spans[0] || 1;
+
+  const spanField = spans.length > 1 ? `
+    <div class="epm-field">
+      <label class="epm-label">径間</label>
+      <select id="epm-span" class="epm-select">
+        ${spans.map(sp => `<option value="${sp}" ${sp === currentSpan ? 'selected' : ''}>${sp}径間</option>`).join('')}
+      </select>
+    </div>` : `<input type="hidden" id="epm-span" value="${spans[0] || 1}">`;
+
   const modal = document.createElement('div');
   modal.id = 'extra-photo-modal';
   modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.85);display:flex;align-items:flex-end;';
@@ -5178,21 +5193,19 @@ function openExtraPhotoModal(sectionKey, dataURL) {
         <button onclick="closeExtraPhotoModal()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">✕ キャンセル</button>
       </div>
       <img src="${dataURL}" style="width:100%;max-height:180px;object-fit:contain;border-radius:8px;margin-bottom:12px;background:#000;">
+      ${spanField}
       ${isS3 ? s3Fields : s10Fields}
       <div class="epm-field">
         <label class="epm-label">備考（任意）</label>
         <input id="epm-memo" type="text" class="epm-input" placeholder="メモを入力">
       </div>
-      <button onclick="saveExtraPhoto('${sectionKey}','${dataURL.substring(0,20)}')" data-dataurl="PLACEHOLDER" style="width:100%;margin-top:8px;background:var(--green,#22c55e);border:none;color:#fff;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">💾 保存</button>
+      <button data-save style="width:100%;margin-top:8px;background:var(--green,#22c55e);border:none;color:#fff;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">💾 保存</button>
     </div>`;
 
-  // dataURLをdata属性で保持（HTMLに直接埋め込まない）
   modal._dataURL = dataURL;
   modal._sectionKey = sectionKey;
   document.body.appendChild(modal);
-
-  // 保存ボタンのonclickを上書き（クロージャでdataURLを渡す）
-  modal.querySelector('button[data-dataurl]').onclick = () => saveExtraPhoto(sectionKey, dataURL);
+  modal.querySelector('button[data-save]').onclick = () => saveExtraPhoto(sectionKey, dataURL);
 }
 
 function toggleBuzaiInput() {
@@ -5209,17 +5222,18 @@ function closeExtraPhotoModal() {
 function saveExtraPhoto(sectionKey, dataURL) {
   const isS3 = sectionKey === 's3';
   let info = {};
-  const memo = document.getElementById('epm-memo')?.value || '';
+  const memo  = document.getElementById('epm-memo')?.value || '';
+  const span  = parseInt(document.getElementById('epm-span')?.value || '1') || 1;
 
   if (isS3) {
-    const type = document.getElementById('epm-s3-type')?.value || '';
+    const type  = document.getElementById('epm-s3-type')?.value || '';
     const buzai = type === '部材記号' ? (document.getElementById('epm-buzai')?.value || '') : '';
-    info = { type, buzai, memo };
+    info = { type, buzai, memo, span };
   } else {
     const buzai   = document.getElementById('epm-buzai-s10')?.value || '';
     const elemNo  = document.getElementById('epm-element-no')?.value || '';
     const sonsyou = document.getElementById('epm-sonsyou')?.value || '';
-    info = { buzai, elemNo, sonsyou, memo };
+    info = { buzai, elemNo, sonsyou, memo, span };
   }
 
   const id = 'extra_' + Date.now();
@@ -5240,23 +5254,34 @@ function renderExtraPhotoGrid(sectionKey) {
   if (!grid) return;
   // s10とs9s10は同じ追加写真プール
   const keys = sectionKey === 's10' ? ['s10', 's9s10'] : [sectionKey];
-  const photos = (state.extraPhotos || []).filter(p => keys.includes(p.sectionKey));
+  const allPhotos = (state.extraPhotos || []).filter(p => keys.includes(p.sectionKey));
+
+  // 径間フィルター適用（0=全て）
+  const currentSpan = photoFilter.span || 0;
+  const photos = currentSpan === 0
+    ? allPhotos
+    : allPhotos.filter(p => (p.info?.span || 1) === currentSpan);
+
   if (photos.length === 0) {
-    grid.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px 0;">追加写真はありません</div>';
+    const msg = allPhotos.length > 0
+      ? `<div style="color:var(--text2);font-size:12px;padding:8px 0;">この径間の追加写真はありません</div>`
+      : `<div style="color:var(--text2);font-size:12px;padding:8px 0;">追加写真はありません</div>`;
+    grid.innerHTML = msg;
     return;
   }
   grid.innerHTML = photos.map(p => {
-    const isS3 = p.sectionKey === 's3';
-    const label = isS3
+    const isS3   = p.sectionKey === 's3';
+    const label  = isS3
       ? (p.info.type === '部材記号' ? `部材記号: ${p.info.buzai}` : p.info.type)
       : `${p.info.buzai} No.${p.info.elemNo || '-'} ${p.info.sonsyou}`;
-    const memo = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
+    const spanBadge = `<span style="background:var(--accent,#3b82f6);color:#fff;font-size:9px;font-weight:700;border-radius:6px;padding:1px 5px;margin-left:4px;">${p.info?.span || 1}径間</span>`;
+    const memo   = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
     return `
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;">
         <img src="${p.dataURL}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;" onclick="openExtraPhotoLightbox('${p.id}')">
         <button onclick="deleteExtraPhoto('${p.id}','${sectionKey}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;">✕</button>
         <div style="padding:6px 8px;">
-          <div style="font-size:11px;font-weight:700;color:var(--text);">${label}</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}</div>
           ${memo}
         </div>
       </div>`;
