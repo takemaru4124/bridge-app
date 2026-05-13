@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bridge-app-v3';
+const CACHE_NAME = 'bridge-app-v4';
 const FILES = [
   './bridge_inspection_app.html',
   './css/style.css',
