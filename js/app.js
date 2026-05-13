@@ -4017,28 +4017,46 @@ async function getPrevPhotoForSlot(slot) {
 const _slotPhotoIndex = {};
 
 function setSlotPhotoIndex(slotKey, idx) {
-  _slotPhotoIndex[slotKey] = idx;
-  const wrap = document.getElementById(`curr-photo-wrap-${slotKey}`);
+  const wrap = document.getElementById('curr-photo-wrap-' + slotKey);
   if (!wrap) return;
-  const photoRaw = state.photos[slotKey];
-  const list = normalizePhotoList(photoRaw);
+  const list = normalizePhotoList(state.photos[slotKey]);
   if (!list.length) return;
+
+  const prevIdx = _slotPhotoIndex[slotKey] || 0;
   const safeIdx = Math.max(0, Math.min(list.length - 1, idx));
   _slotPhotoIndex[slotKey] = safeIdx;
 
-  const img    = wrap.querySelector('.curr-photo-img');
-  const dots   = wrap.querySelector('.curr-photo-dots');
-  const delBtn = wrap.querySelector('.curr-photo-delete');
+  const stage   = wrap.querySelector('.curr-img-stage');
+  const img     = stage ? stage.querySelector('.curr-photo-img') : wrap.querySelector('.curr-photo-img');
+  const dots    = wrap.querySelector('.curr-photo-dots');
+  const delBtn  = wrap.querySelector('.curr-photo-delete');
   const prevBtn = wrap.querySelector('.curr-nav-prev');
   const nextBtn = wrap.querySelector('.curr-nav-next');
 
-  if (img)    img.src = list[safeIdx].dataURL;
-  if (delBtn) delBtn.setAttribute('onclick', `deleteOnePhoto('${slotKey}',${safeIdx},event)`);
+  // スライドアニメーション（stageをclip、imgをスライド）
+  if (img && stage) {
+    const dir = safeIdx >= prevIdx ? 1 : -1;
+    img.style.transition = 'none';
+    img.style.transform  = 'translateX(' + (dir * 100) + '%)';
+    img.src = list[safeIdx].dataURL;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        img.style.transition = 'transform 0.25s ease';
+        img.style.transform  = 'translateX(0)';
+      });
+    });
+    img.setAttribute('onclick', 'openPhotoLightbox(\'' + slotKey + '\',' + safeIdx + ')');
+  } else if (img) {
+    img.src = list[safeIdx].dataURL;
+    img.setAttribute('onclick', 'openPhotoLightbox(\'' + slotKey + '\',' + safeIdx + ')');
+  }
+
+  if (delBtn) delBtn.setAttribute('onclick', 'event.stopPropagation();deleteOnePhoto(\'' + slotKey + '\',' + safeIdx + ',event)');
   if (prevBtn) prevBtn.style.display = safeIdx > 0 ? 'flex' : 'none';
   if (nextBtn) nextBtn.style.display = safeIdx < list.length - 1 ? 'flex' : 'none';
   if (dots) {
     dots.innerHTML = list.map((_, i) =>
-      `<span class="curr-dot${i === safeIdx ? ' active' : ''}"></span>`).join('');
+      '<span class="curr-dot' + (i === safeIdx ? ' active' : '') + '"></span>').join('');
   }
 }
 
@@ -4069,14 +4087,14 @@ function renderPhotoSlot(slot, sectionKey) {
     const dotsHTML = photoList.length > 1
       ? `<div class="curr-photo-dots">${photoList.map((_, i) => `<span class="curr-dot${i === curIdx ? ' active' : ''}"></span>`).join('')}</div>`
       : '';
-    const prevNav = curIdx > 0
-      ? `<button class="curr-nav curr-nav-prev" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx - 1})">‹</button>` : `<button class="curr-nav curr-nav-prev" style="display:none" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx - 1})">‹</button>`;
-    const nextNav = curIdx < photoList.length - 1
-      ? `<button class="curr-nav curr-nav-next" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx + 1})">›</button>` : `<button class="curr-nav curr-nav-next" style="display:none" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx + 1})">›</button>`;
+    const prevNav = `<button class="curr-nav curr-nav-prev" style="${curIdx > 0 ? '' : 'display:none'}" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx - 1})">‹</button>`;
+    const nextNav = `<button class="curr-nav curr-nav-next" style="${curIdx < photoList.length - 1 ? '' : 'display:none'}" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx + 1})">›</button>`;
 
     currHTML = `
       <div class="photo-half-done" id="curr-photo-wrap-${slot.key}">
-        <img class="curr-photo-img" src="${photoList[curIdx].dataURL}" onclick="openPhotoLightbox('${slot.key}',${curIdx},'${sectionKey}')">
+        <div class="curr-img-stage">
+          <img class="curr-photo-img" src="${photoList[curIdx].dataURL}" onclick="openPhotoLightbox('${slot.key}',${curIdx})">
+        </div>
         <span class="curr-photo-delete photo-half-delete" onclick="event.stopPropagation();deleteOnePhoto('${slot.key}',${curIdx},event)">✕</span>
         <span class="photo-half-check">✓</span>
         ${prevNav}${nextNav}
@@ -4747,10 +4765,14 @@ currentScreen = 'home';
       background:#000; overflow:hidden;
       display:flex; flex-direction:column;
     }
+    /* スライドアニメーション用ステージ（overflow:hiddenでクリップ） */
+    .curr-img-stage {
+      flex:1; overflow:hidden; position:relative; min-height:0;
+    }
     .curr-photo-img {
-      width:100%; flex:1; object-fit:cover;
+      width:100%; height:100%; object-fit:cover;
       display:block; cursor:pointer;
-      min-height:0;
+      will-change:transform;
     }
 
     /* 左右ナビボタン */
