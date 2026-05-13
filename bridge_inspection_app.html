@@ -12,11 +12,15 @@
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js');
+    // 古いキャッシュを強制クリア（更新時に確実に新しいファイルを読み込む）
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      regs.forEach(reg => reg.update());
+    });
   }
 </script>
-<script src="js/pdfjs.min.js"></script>
-<script src="js/jszip.min.js"></script>
-<link rel="stylesheet" href="css/style.css">
+<script src="js/pdfjs.min.js?v=20260513"></script>
+<script src="js/jszip.min.js?v=20260513"></script>
+<link rel="stylesheet" href="css/style.css?v=20260513">
 </head>
 <body>
 
@@ -297,6 +301,6 @@
 
 </div><!-- /.screen-wrapper -->
 
-<script src="js/app.js"></script>
+<script src="js/app.js?v=20260513"></script>
 </body>
 </html>
