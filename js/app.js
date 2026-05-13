@@ -3141,7 +3141,7 @@ function hitTest(nx, ny, objects, canvas) {
   const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
   const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
   const px = nx * W, py = ny * H;
-  const THRESH = 18; // タップ許容範囲（px）
+  const THRESH = 28; // タップ許容範囲（px）小さいオブジェクトも選択しやすいよう拡大
 
   // 後ろから（前面優先）
   for (let i = objects.length - 1; i >= 0; i--) {
