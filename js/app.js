@@ -3469,11 +3469,16 @@ async function saveWorkData() {
       }
     }
 
-    // 写真を圧縮（複数枚対応・長辺1920px・JPEG80%）
+    // 写真を圧縮（複数枚対応・長辺1280px・JPEG75%）
     showToast('🖼️ 写真を圧縮中...', '');
     const compressedPhotos = {};
     for (const [key, raw] of Object.entries(state.photos || {})) {
-      const list = normalizePhotoList(raw);
+      // normalizePhotoListのインライン版（依存排除）
+      let list = [];
+      if (Array.isArray(raw))             list = raw.map(p => typeof p === 'string' ? { dataURL: p } : p).filter(p => p?.dataURL);
+      else if (typeof raw === 'string' && raw) list = [{ dataURL: raw }];
+      else if (raw?.dataURL)              list = [raw];
+      if (!list.length) continue;
       const compressed = await Promise.all(list.map(p =>
         compressImage(p.dataURL, 0.75, 1280).then(d => ({ ...p, dataURL: d }))
       ));
@@ -3517,10 +3522,10 @@ async function saveWorkData() {
     const a    = document.createElement('a');
     a.href     = url;
     a.download = fileName;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
 
     const photoCount = Object.values(compressedPhotos).reduce((n, v) => n + (Array.isArray(v) ? v.length : 1), 0);
     const hasPDF     = !!state.pdfData;
@@ -4546,12 +4551,16 @@ async function downloadAll() {
     return;
   }
 
-  // 写真を圧縮（長辺1920px・JPEG80%）
+  // 写真を圧縮（長辺1280px・JPEG75%）
   showToast('🖼️ 写真を圧縮中...', '');
   const compressedPhotoMap = {};
   for (const key of photoKeys) {
-    const raw  = state.photos[key];
-    const list = normalizePhotoList(raw);
+    const raw = state.photos[key];
+    let list = [];
+    if (Array.isArray(raw))              list = raw.map(p => typeof p === 'string' ? { dataURL: p } : p).filter(p => p?.dataURL);
+    else if (typeof raw === 'string' && raw) list = [{ dataURL: raw }];
+    else if (raw?.dataURL)               list = [raw];
+    if (!list.length) continue;
     compressedPhotoMap[key] = await Promise.all(
       list.map(p => compressImage(p.dataURL, 0.75, 1280).then(d => ({ ...p, dataURL: d })))
     );
@@ -4619,17 +4628,17 @@ async function downloadAll() {
     const a    = document.createElement('a');
     a.href     = url;
     a.download = `${state.pdfName}_点検データ.zip`;
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
 
     const total = drawEntries.length + photoKeys.length;
     showToast(`✅ ${total}ファイルをZIPで保存しました`, 'success');
 
   } catch(err) {
     console.error(err);
-    showToast('❌ 保存に失敗しました', 'error');
+    showToast(`❌ 保存に失敗しました: ${err.message || err}`, 'error');
   }
 }
 
