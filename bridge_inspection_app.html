@@ -203,16 +203,34 @@
       </div>
       <!-- 今回写真 -->
       <div style="display:flex;flex-direction:column;">
-        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;font-weight:600;">📸 今回撮影</div>
-        <div id="popup-current-wrap" style="background:var(--surface2);border:2px dashed var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupTakePhoto()">
-          <img id="popup-current-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:none;">
-          <div id="popup-current-none" style="text-align:center;color:var(--text2);padding:16px;">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:6px;text-align:center;font-weight:600;">
+          📸 今回撮影 <span id="popup-count-badge" style="display:none;background:#3b82f6;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:4px;vertical-align:middle;"></span>
+        </div>
+        <!-- 未撮影表示 -->
+        <div id="popup-current-none" style="background:var(--surface2);border:2px dashed var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupCapturePhoto(false)">
+          <div style="text-align:center;color:var(--text2);padding:16px;">
             <div style="font-size:40px;margin-bottom:8px;">📷</div>
             <div style="font-size:12px;font-weight:600;">タップして撮影</div>
           </div>
         </div>
-        <input type="file" id="popup-camera-input" accept="image/*" capture="environment" style="display:none" onchange="popupPhotoSelected(this)">
-        <button id="popup-retake-btn" onclick="popupTakePhoto()" style="display:none;width:100%;margin-top:8px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px;font-size:12px;cursor:pointer;">📷 再撮影</button>
+        <!-- 撮影済み表示（複数枚スライド） -->
+        <div id="popup-current-wrap" style="display:none;flex-direction:column;flex:1;min-height:200px;position:relative;background:#000;border-radius:8px;overflow:hidden;">
+          <div id="popup-img-stage" style="flex:1;overflow:hidden;position:relative;min-height:0;">
+            <img id="popup-current-img" src="" alt="" style="width:100%;height:100%;object-fit:contain;display:block;will-change:transform;">
+          </div>
+          <!-- 左右ナビ -->
+          <button id="popup-nav-prev" onclick="popupPhotoNav(-1)" style="display:none;position:absolute;left:6px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:22px;cursor:pointer;z-index:3;line-height:1;">‹</button>
+          <button id="popup-nav-next" onclick="popupPhotoNav(1)"  style="display:none;position:absolute;right:6px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:22px;cursor:pointer;z-index:3;line-height:1;">›</button>
+          <!-- 削除ボタン -->
+          <button id="popup-delete-btn" onclick="popupDeleteCurrentPhoto()" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:28px;height:28px;font-size:13px;cursor:pointer;z-index:4;line-height:1;">✕</button>
+          <!-- ドットインジケーター -->
+          <div id="popup-dots" style="display:flex;justify-content:center;gap:5px;padding:4px 0;background:rgba(0,0,0,0.45);"></div>
+          <!-- 追加・撮り直し -->
+          <div style="display:flex;">
+            <button onclick="popupCapturePhoto(true)"  style="flex:1;padding:8px 4px;border:none;background:#22c55e;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">📷 追加</button>
+            <button onclick="popupCapturePhoto(false)" style="flex:1;padding:8px 4px;border:none;background:#374151;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🔄 撮り直し</button>
+          </div>
+        </div>
       </div>
     </div>
     <!-- 前後ナビ -->
