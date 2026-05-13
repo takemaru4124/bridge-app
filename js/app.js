@@ -961,49 +961,6 @@ function openPhotoPopup(slotKey) {
   popup.style.display = 'flex';
 }
 
-function updatePopup(slot) {
-  if (!slot) return;
-
-  // タイトル・ラベル
-  document.getElementById('popup-title').textContent = `📷 写真番号 No.${slot.prevNo}`;
-  document.getElementById('popup-label').textContent  = slot.label || '';
-
-  // 前回写真
-  const prevImg  = document.getElementById('popup-prev-img');
-  const prevNone = document.getElementById('popup-prev-none');
-  const cached   = prevPhotoCache[slot.key];
-  if (cached) {
-    prevImg.src = cached; prevImg.style.display = 'block'; prevNone.style.display = 'none';
-  } else {
-    prevImg.style.display = 'none'; prevNone.style.display = 'flex';
-    getPrevPhotoForSlot(slot).then(data => {
-      if (data) { prevImg.src = data; prevImg.style.display = 'block'; prevNone.style.display = 'none'; }
-    });
-  }
-
-  // 今回写真
-  const currentImg  = document.getElementById('popup-current-img');
-  const currentNone = document.getElementById('popup-current-none');
-  const retakeBtn   = document.getElementById('popup-retake-btn');
-  const photoRaw = state.photos?.[slot.key];
-  const photoURL = Array.isArray(photoRaw) ? photoRaw[0]?.dataURL ?? photoRaw[0]
-                 : typeof photoRaw === 'string' ? photoRaw
-                 : photoRaw?.dataURL;
-  if (photoURL) {
-    currentImg.src = photoURL;
-    currentImg.style.display = 'block';
-    currentNone.style.display = 'none';
-    retakeBtn.style.display = 'block';
-  } else {
-    currentImg.style.display = 'none';
-    currentNone.style.display = 'flex';
-    retakeBtn.style.display = 'none';
-  }
-}
-
-
-
-
 
 function closePhotoPopup() {
   document.getElementById('photo-popup').style.display = 'none';
@@ -1068,30 +1025,186 @@ function closePhotoLightbox() {
   _lightboxSlotKey = null;
 }
 
-function popupTakePhoto() {
-  document.getElementById('popup-camera-input').click();
+// ポップアップ内の現在表示インデックス
+let _popupPhotoIdx = 0;
+
+function popupCapturePhoto(addMode) {
+  if (!_popupSlotKey) return;
+  // 競合防止：新規input生成方式
+  const old = document.getElementById('popup-camera-input-dyn');
+  if (old) old.remove();
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.id = 'popup-camera-input-dyn';
+  input.style.display = 'none';
+  input.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) { input.remove(); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (!state.photos) state.photos = {};
+      const newEntry = { dataURL: ev.target.result, label: '' };
+      const existing = state.photos[_popupSlotKey];
+      if (addMode && Array.isArray(existing)) {
+        existing.push(newEntry);
+        _popupPhotoIdx = existing.length - 1;
+      } else if (addMode && existing) {
+        const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
+        state.photos[_popupSlotKey] = [prev, newEntry];
+        _popupPhotoIdx = 1;
+      } else {
+        state.photos[_popupSlotKey] = [newEntry];
+        _popupPhotoIdx = 0;
+      }
+      const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+      const slot  = slots.find(s => s.key === _popupSlotKey);
+      if (slot) updatePopup(slot);
+      // グリッド側も更新
+      _refreshPhotoGrid(_popupSlotKey);
+      showToast('✅ 写真を保存しました', 'success');
+    };
+    reader.readAsDataURL(file);
+    input.remove();
+  }, { once: true });
+  document.body.appendChild(input);
+  input.click();
 }
 
-function popupPhotoSelected(input) {
-  if (!input.files[0] || !_popupSlotKey) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    if (!state.photos) state.photos = {};
-    // 配列形式で保存
-    state.photos[_popupSlotKey] = [{ dataURL: e.target.result, label: '' }];
+// 旧関数（互換性のため残す）
+function popupTakePhoto() { popupCapturePhoto(false); }
+function popupPhotoSelected() {}
 
-    // ポップアップを更新
-    const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
-    const slot  = slots.find(s => s.key === _popupSlotKey);
-    if (slot) updatePopup(slot);
-  };
-  reader.readAsDataURL(input.files[0]);
+function popupPhotoNav(dir) {
+  const list = normalizePhotoList(state.photos[_popupSlotKey]);
+  const prev = _popupPhotoIdx;
+  _popupPhotoIdx = Math.max(0, Math.min(list.length - 1, _popupPhotoIdx + dir));
+  _updatePopupPhotoDisplay(list, prev);
+}
+
+function popupDeleteCurrentPhoto() {
+  if (!_popupSlotKey) return;
+  const existing = state.photos[_popupSlotKey];
+  if (Array.isArray(existing)) {
+    existing.splice(_popupPhotoIdx, 1);
+    if (existing.length === 0) {
+      delete state.photos[_popupSlotKey];
+    } else {
+      _popupPhotoIdx = Math.min(_popupPhotoIdx, existing.length - 1);
+    }
+  } else {
+    delete state.photos[_popupSlotKey];
+    _popupPhotoIdx = 0;
+  }
+  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+  const slot  = slots.find(s => s.key === _popupSlotKey);
+  if (slot) updatePopup(slot);
+  _refreshPhotoGrid(_popupSlotKey);
+  showToast('写真を削除しました', '');
+}
+
+function _refreshPhotoGrid(slotKey) {
+  // 損傷写真グリッドを更新
+  const grid10 = document.getElementById('photo-grid-s10');
+  if (grid10) {
+    grid10.innerHTML = DAMAGE_PHOTO_SLOTS.map(s => renderPhotoSlot(s, 's10')).join('');
+    loadPrevPhotosForSlots(DAMAGE_PHOTO_SLOTS);
+    attachAllGridSwipes('s10');
+  }
+  // No.ボタンの色を更新
+  document.querySelectorAll('[id^="photo-link-btns-"]').forEach(el => {
+    renderPhotoLinkButtons(el.id.replace('photo-link-btns-', ''));
+  });
+  updatePhotoProgress();
+}
+
+function _updatePopupPhotoDisplay(list, prevIdx) {
+  const img      = document.getElementById('popup-current-img');
+  const stage    = document.getElementById('popup-img-stage');
+  const navPrev  = document.getElementById('popup-nav-prev');
+  const navNext  = document.getElementById('popup-nav-next');
+  const dots     = document.getElementById('popup-dots');
+  const badge    = document.getElementById('popup-count-badge');
+  const delBtn   = document.getElementById('popup-delete-btn');
+
+  if (!list.length) return;
+  const safeIdx = Math.max(0, Math.min(list.length - 1, _popupPhotoIdx));
+  _popupPhotoIdx = safeIdx;
+
+  // スライドアニメーション
+  if (img && stage && prevIdx !== undefined && prevIdx !== safeIdx) {
+    const dir = safeIdx > prevIdx ? 1 : -1;
+    img.style.transition = 'none';
+    img.style.transform  = 'translateX(' + (dir * 100) + '%)';
+    img.src = list[safeIdx].dataURL;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      img.style.transition = 'transform 0.25s ease';
+      img.style.transform  = 'translateX(0)';
+    }));
+  } else if (img) {
+    img.src = list[safeIdx].dataURL;
+    img.style.transform = 'translateX(0)';
+  }
+
+  if (navPrev) navPrev.style.display = safeIdx > 0 ? 'flex' : 'none';
+  if (navNext) navNext.style.display = safeIdx < list.length - 1 ? 'flex' : 'none';
+  if (dots) {
+    dots.style.display = list.length > 1 ? 'flex' : 'none';
+    dots.innerHTML = list.map((_, i) =>
+      '<span style="width:7px;height:7px;border-radius:50%;background:' +
+      (i === safeIdx ? '#fff' : 'rgba(255,255,255,0.4)') + ';display:inline-block;"></span>').join('');
+  }
+  if (badge) {
+    if (list.length > 1) { badge.textContent = list.length + '枚'; badge.style.display = 'inline'; }
+    else badge.style.display = 'none';
+  }
+}
+
+function updatePopup(slot) {
+  if (!slot) return;
+
+  // タイトル・ラベル
+  document.getElementById('popup-title').textContent = '📷 写真番号 No.' + slot.prevNo;
+  document.getElementById('popup-label').textContent  = slot.label || '';
+
+  // 前回写真
+  const prevImg  = document.getElementById('popup-prev-img');
+  const prevNone = document.getElementById('popup-prev-none');
+  if (prevImg && prevNone) {
+    const cached = prevPhotoCache[slot.key];
+    if (cached) {
+      prevImg.src = cached; prevImg.style.display = 'block'; prevNone.style.display = 'none';
+    } else {
+      prevImg.style.display = 'none'; prevNone.style.display = 'flex';
+      getPrevPhotoForSlot(slot).then(data => {
+        if (data) { prevImg.src = data; prevImg.style.display = 'block'; prevNone.style.display = 'none'; }
+      });
+    }
+  }
+
+  // 今回写真
+  const wrap = document.getElementById('popup-current-wrap');
+  const none = document.getElementById('popup-current-none');
+  const list = normalizePhotoList(state.photos[slot.key]);
+
+  if (list.length > 0) {
+    if (wrap) wrap.style.display = 'flex';
+    if (none) none.style.display = 'none';
+    _popupPhotoIdx = Math.min(_popupPhotoIdx, list.length - 1);
+    _updatePopupPhotoDisplay(list, undefined);
+  } else {
+    if (wrap) wrap.style.display = 'none';
+    if (none) none.style.display = 'flex';
+    _popupPhotoIdx = 0;
+  }
 }
 
 function popupNav(dir) {
   const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
   _popupSlotIndex = Math.max(0, Math.min(slots.length - 1, _popupSlotIndex + dir));
   _popupSlotKey   = slots[_popupSlotIndex].key;
+  _popupPhotoIdx  = 0;
   updatePopup(slots[_popupSlotIndex]);
 }
 
@@ -3947,6 +4060,8 @@ function renderPhotoViewer(item, tabs, content) {
 
   // 各スロットの前回写真を非同期ロード
   loadPrevPhotosForSlots(slots);
+  // グリッドにスワイプを付与
+  setTimeout(() => attachAllGridSwipes(item.key), 100);
 
   // 複数径間の場合は初期表示を1径間目のみに
   const allSpans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
@@ -4182,6 +4297,7 @@ function deleteOnePhoto(slotKey, idx, evtOrSectionKey) {
   if (grid) {
     grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
     loadPrevPhotosForSlots(slots);
+    attachAllGridSwipes(sectionKey);
   }
   updatePhotoProgress();
   showToast('写真を削除しました', '');
@@ -4194,6 +4310,7 @@ function deletePhotoAndRefresh(slotKey, sectionKey) {
   if (grid) {
     grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
     loadPrevPhotosForSlots(slots);
+    attachAllGridSwipes(sectionKey);
   }
   updatePhotoProgress();
   showToast('写真を削除しました','');
@@ -4299,6 +4416,7 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
     if (grid) {
       grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
       loadPrevPhotosForSlots(slots);
+      attachAllGridSwipes(sectionKey);
       // 撮影したスロットを現在のインデックスに合わせる
       const list = state.photos[slot.key];
       if (Array.isArray(list) && list.length > 1) {
@@ -4747,6 +4865,75 @@ uz.addEventListener('drop', e => {
 // 初期表示: ホームをis-activeに
 document.getElementById('screen-home').classList.add('is-active');
 currentScreen = 'home';
+
+// ===== スワイプ処理（グリッド・ポップアップ共通） =====
+function attachSwipe(el, onSwipeLeft, onSwipeRight) {
+  let sx = 0, sy = 0, moved = false;
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    sx = e.touches[0].clientX;
+    sy = e.touches[0].clientY;
+    moved = false;
+  }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (e.touches.length !== 1) return;
+    const dx = Math.abs(e.touches[0].clientX - sx);
+    const dy = Math.abs(e.touches[0].clientY - sy);
+    if (dx > dy && dx > 8) moved = true;
+  }, { passive: true });
+  el.addEventListener('touchend', e => {
+    if (!moved) return;
+    const dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) onSwipeLeft();
+    else        onSwipeRight();
+  });
+}
+
+// グリッドの curr-img-stage にスワイプを付与
+function attachGridSwipe(slotKey, sectionKey) {
+  const wrap  = document.getElementById('curr-photo-wrap-' + slotKey);
+  const stage = wrap ? wrap.querySelector('.curr-img-stage') : null;
+  if (!stage || stage._swipeAttached) return;
+  stage._swipeAttached = true;
+  attachSwipe(stage,
+    () => {
+      const list = normalizePhotoList(state.photos[slotKey]);
+      const cur  = _slotPhotoIndex[slotKey] || 0;
+      if (cur < list.length - 1) setSlotPhotoIndex(slotKey, cur + 1);
+    },
+    () => {
+      const cur = _slotPhotoIndex[slotKey] || 0;
+      if (cur > 0) setSlotPhotoIndex(slotKey, cur - 1);
+    }
+  );
+}
+
+// sectionKey配下の全スロットにスワイプを一括付与
+function attachAllGridSwipes(sectionKey) {
+  const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
+  slots.forEach(s => attachGridSwipe(s.key, sectionKey));
+}
+
+// ポップアップのimgステージにスワイプを付与（初期化時に1回だけ）
+(function initPopupSwipe() {
+  const stage = document.getElementById('popup-img-stage');
+  if (!stage) return;
+  attachSwipe(stage,
+    () => {
+      const list = normalizePhotoList(state.photos[_popupSlotKey]);
+      const prev = _popupPhotoIdx;
+      _popupPhotoIdx = Math.min(list.length - 1, _popupPhotoIdx + 1);
+      _updatePopupPhotoDisplay(list, prev);
+    },
+    () => {
+      const list = normalizePhotoList(state.photos[_popupSlotKey]);
+      const prev = _popupPhotoIdx;
+      _popupPhotoIdx = Math.max(0, _popupPhotoIdx - 1);
+      _updatePopupPhotoDisplay(list, prev);
+    }
+  );
+})();
 
 // ===== 複数枚写真UI用スタイル追加 =====
 (function injectMultiPhotoStyles() {
