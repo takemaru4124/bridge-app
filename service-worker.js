@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bridge-app-v4';
+const CACHE_NAME = 'bridge-app-v5';
 const FILES = [
   './bridge_inspection_app.html',
   './css/style.css',
@@ -21,8 +21,16 @@ self.addEventListener('activate', e => {
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
     )
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', e => {
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+  // ネットワーク優先：取得できればキャッシュを更新、失敗時はキャッシュから返す
+  e.respondWith(
+    fetch(e.request).then(response => {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+      return response;
+    }).catch(() => caches.match(e.request))
+  );
 });
