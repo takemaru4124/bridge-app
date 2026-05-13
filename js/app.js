@@ -49,6 +49,8 @@ const state = {
   drawings: {},
   // 写真データ: { slotKey: { dataURL, label, required, isNON } }
   photos: {},
+  // 追加写真データ: [{ id, sectionKey, dataURL, info }]
+  extraPhotos: [],
   currentSection: null,
   currentPhotoTarget: null,
 };
@@ -793,6 +795,12 @@ async function renderCombinedViewer(item, tabs, content) {
     tempSaveBtn.style.cssText = 'margin-left:auto;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;';
     tempSaveBtn.onclick = () => saveTempData();
 
+    // 写真追加ボタン
+    const extraPhotoBtn = document.createElement('button');
+    extraPhotoBtn.textContent = '📷 写真追加';
+    extraPhotoBtn.style.cssText = 'flex-shrink:0;background:var(--accent,#3b82f6);border:none;color:#fff;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;margin-left:6px;';
+    extraPhotoBtn.onclick = () => startExtraPhoto('s9s10');
+
     for (let i = 0; i < s9Pages.length; i++) {
       const p = s9Pages[i];
 
@@ -845,6 +853,7 @@ async function renderCombinedViewer(item, tabs, content) {
     }
 
     innerTabs.appendChild(tempSaveBtn);
+    innerTabs.appendChild(extraPhotoBtn);
     if (s9Pages.length > 1) secDraw.insertBefore(innerTabs, secDraw.firstChild);
     else secDraw.insertBefore(innerTabs, secDraw.firstChild);
   }
@@ -993,11 +1002,13 @@ function closePhotoPopup() {
 let _lightboxSlotKey   = null;
 let _lightboxPhotoIdx  = 0;
 let _lightboxSectionKey = null;
+let _lightboxDirectURL  = null;
 
-function openPhotoLightbox(slotKey, idx, sectionKey) {
+function openPhotoLightbox(slotKey, idx, sectionKey, directDataURL) {
   _lightboxSlotKey    = slotKey;
-  _lightboxPhotoIdx   = idx;
+  _lightboxPhotoIdx   = idx || 0;
   _lightboxSectionKey = sectionKey;
+  _lightboxDirectURL  = directDataURL || null;
 
   let lb = document.getElementById('photo-lightbox');
   if (!lb) {
@@ -1019,6 +1030,21 @@ function openPhotoLightbox(slotKey, idx, sectionKey) {
 }
 
 function updateLightbox() {
+  // 単体URL直接表示モード（追加写真のライトボックス）
+  if (_lightboxDirectURL) {
+    const img = document.getElementById('lb-img');
+    if (img) img.src = _lightboxDirectURL;
+    const counter = document.getElementById('lb-counter');
+    if (counter) counter.textContent = '';
+    const lb = document.getElementById('photo-lightbox');
+    if (lb) {
+      const prev = lb.querySelector('.lb-prev');
+      const next = lb.querySelector('.lb-next');
+      if (prev) prev.style.display = 'none';
+      if (next) next.style.display = 'none';
+    }
+    return;
+  }
   const list = normalizePhotoList(state.photos[_lightboxSlotKey]);
   const p = list[_lightboxPhotoIdx];
   const dataURL = p?.dataURL ?? (typeof p === 'string' ? p : null);
@@ -3514,6 +3540,7 @@ async function saveWorkData() {
       savedAt:   new Date().toISOString(),
       pdfName:   state.pdfName || '橋梁点検',
       photos:    compressedPhotos,
+      extraPhotos: state.extraPhotos || [],
       drawings:  state.drawings || {},
       drawState: drawStateExport,
     };
@@ -4076,8 +4103,9 @@ function renderPhotoViewer(item, tabs, content) {
   // ④ ヘッダー（枚数表示）
   const captured = slots.filter(s => state.photos[s.key]).length;
   const headerHTML = `
-    <div class="photo-section-header">
-      <h3>📸 写真記録 <span style="font-size:12px;color:var(--text2);font-weight:400">${captured}/${slots.length}枚</span></h3>
+    <div class="photo-section-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <h3 style="margin:0;">📸 写真記録 <span style="font-size:12px;color:var(--text2);font-weight:400">${captured}/${slots.length}枚</span></h3>
+      <button onclick="startExtraPhoto('${item.key}')" style="background:var(--accent,#3b82f6);border:none;color:#fff;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📷 写真追加</button>
     </div>
     <p style="font-size:11px;color:var(--accent);margin-bottom:10px;font-weight:700;">
       📷 枠をタップするとカメラが起動します
@@ -4098,6 +4126,15 @@ function renderPhotoViewer(item, tabs, content) {
     ${headerHTML}
     <div class="photo-grid" id="photo-grid-${item.key}">
       ${slots.map(slot => renderPhotoSlot(slot, item.key)).join('')}
+    </div>
+    <div style="margin-top:16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <span>📎 追加写真</span>
+        <button onclick="startExtraPhoto('${item.key}')" style="background:var(--accent,#3b82f6);border:none;color:#fff;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;">📷 追加</button>
+      </div>
+      <div id="extra-photo-grid-${item.key}" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="color:var(--text2);font-size:12px;padding:8px 0;">追加写真はありません</div>
+      </div>
     </div>
   `;
   content.appendChild(section);
@@ -4651,6 +4688,30 @@ async function downloadAll() {
       }
     }
 
+    // ④ 追加写真
+    const extraPhotos = state.extraPhotos || [];
+    if (extraPhotos.length > 0) {
+      for (const ep of extraPhotos) {
+        const compressed = await compressImage(ep.dataURL, 0.75, 1280);
+        if (!compressed?.startsWith('data:image')) continue;
+        const ext = compressed.includes('image/png') ? 'png' : 'jpg';
+        const isS3 = ep.sectionKey === 's3';
+        let folderName, fname;
+        if (isS3) {
+          folderName = 'その３_現地状況写真/追加';
+          const type = ep.info.type === '部材記号' ? ep.info.buzai : ep.info.type;
+          fname = `${type}_${ep.id.replace('extra_','')}.${ext}`;
+        } else {
+          folderName = 'その１０_損傷写真/追加';
+          const buzai   = ep.info.buzai   || '不明';
+          const elemNo  = ep.info.elemNo  ? `No${ep.info.elemNo}` : '';
+          const sonsyou = ep.info.sonsyou || '';
+          fname = `${buzai}${elemNo}_${sonsyou}_${ep.id.replace('extra_','')}.${ext}`;
+        }
+        zip.folder(folderName).file(fname, compressed.split(',')[1], { base64: true });
+      }
+    }
+
     const blob = await zip.generateAsync({ type: 'blob' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
@@ -4661,7 +4722,7 @@ async function downloadAll() {
     a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 5000);
 
-    const total = drawEntries.length + photoKeys.length;
+    const total = drawEntries.length + photoKeys.length + extraPhotos.length;
     showToast(`✅ ${total}ファイルをZIPで保存しました`, 'success');
 
   } catch(err) {
@@ -5005,6 +5066,208 @@ function attachAllGridSwipes(sectionKey) {
   );
 })();
 
+// ===== 追加写真機能 =====
+
+// 部材種別リスト（buzai.pdf 部材種別列より）
+const BUZAI_LIST = [
+  'Mg:主桁','Cr:横桁','St:縦桁','Ds:床版','Cf:対傾構',
+  'Lu:上横構','Ll:下横構','Bt:上・下弦材','Dt:斜材・垂直材','Pt:橋門構',
+  'Ar:アーチリブ','Sa:補剛桁','Ha:吊り材','Ca:支柱','Pa:橋門構(アーチ)',
+  'Rg:主構(桁)','Rp:主構(脚)','Sc:斜材(斜張)','Ts:塔柱','Th:塔部水平材',
+  'Td:塔部斜材','Co:外ケーブル','Gb:ゲルバー部','Cn:PC定着部','Pp:格点',
+  'Em:コンクリート埋込部','Sx:その他(上部)',
+  'Pw:柱部・壁部','Pb:梁部','Pc:隅角部・接合部','Px:その他(橋脚)',
+  'Ap:胸壁','Ac:竪壁','Aw:翼壁','Ax:その他(橋台)',
+  'Ff:フーチング','Fx:その他(基礎)',
+  'Bh:支承本体','Ba:アンカーボルト','Bm:沓座モルタル','Bc:台座コンクリート','Bx:その他(支承)',
+  'Ss:落橋防止構造','Sd:横変位拘束構造',
+  'Ra:高欄','Gf:防護柵','Fg:地覆','Me:中央分離帯','Ej:伸縮装置',
+  'Si:遮音施設','Cu:縁石','Pm:舗装',
+  'Dr:排水ます','Dp:排水管','Dx:その他(排水)',
+  'Ip:点検施設','Ut:添架物','Ww:袖擁壁',
+  'Ct:頂版','Sw:側壁','Cb:底版','Iw:隔壁','Jo:断面連結部','Lj:縦断連結部',
+  'Eg:目地部','Sg:周辺地盤','Rd:路上','Cx:その他(溝橋)',
+];
+
+// 損傷種類リスト（sonsyou.pdf より）
+const SONSYOU_LIST = [
+  '①腐食','②亀裂','③ゆるみ・脱落','④破断','⑤防食機能の劣化',
+  '⑥ひびわれ','⑦剥離・鉄筋露出','⑧漏水・遊離石灰','⑨抜け落ち',
+  '⑩補修・補強材の損傷','⑪床版ひびわれ','⑫うき',
+  '⑬遊間の異常','⑭路面の凹凸','⑮舗装の異常','⑯支承部の機能障害','⑰その他',
+  '⑱定着部の異常','⑲変色・劣化','⑳漏水・滞水',
+  '㉑異常な音・振動','㉒異常なたわみ','㉓変形・欠損','㉔土砂詰まり',
+  '㉕沈下・移動・傾斜','㉖洗掘',
+];
+
+// その３ 撮影種別
+const S3_TYPES = ['全景','正面','桁下','下部構造','部材記号'];
+
+// 追加写真撮影を起動
+function startExtraPhoto(sectionKey) {
+  const old = document.getElementById('extra-camera-input');
+  if (old) old.remove();
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.capture = 'environment';
+  input.id = 'extra-camera-input';
+  input.style.display = 'none';
+  input.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) { input.remove(); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      openExtraPhotoModal(sectionKey, ev.target.result);
+    };
+    reader.readAsDataURL(file);
+    input.remove();
+  }, { once: true });
+  document.body.appendChild(input);
+  input.click();
+}
+
+// 追加写真情報入力モーダルを開く
+function openExtraPhotoModal(sectionKey, dataURL) {
+  const existing = document.getElementById('extra-photo-modal');
+  if (existing) existing.remove();
+
+  const isS3 = sectionKey === 's3';
+  const modal = document.createElement('div');
+  modal.id = 'extra-photo-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,0.85);display:flex;align-items:flex-end;';
+
+  const s3Fields = `
+    <div class="epm-field">
+      <label class="epm-label">撮影種別</label>
+      <select id="epm-s3-type" class="epm-select" onchange="toggleBuzaiInput()">
+        ${S3_TYPES.map(t => `<option value="${t}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="epm-field" id="epm-buzai-field" style="display:none;">
+      <label class="epm-label">部材記号</label>
+      <select id="epm-buzai" class="epm-select">
+        ${BUZAI_LIST.map(b => `<option value="${b.split(':')[0]}">${b}</option>`).join('')}
+      </select>
+    </div>`;
+
+  const s10Fields = `
+    <div class="epm-field">
+      <label class="epm-label">部材名</label>
+      <select id="epm-buzai-s10" class="epm-select">
+        ${BUZAI_LIST.map(b => `<option value="${b.split(':')[0]}">${b}</option>`).join('')}
+      </select>
+    </div>
+    <div class="epm-field">
+      <label class="epm-label">要素番号（任意）</label>
+      <input id="epm-element-no" type="number" class="epm-input" placeholder="例: 1">
+    </div>
+    <div class="epm-field">
+      <label class="epm-label">損傷の種類</label>
+      <select id="epm-sonsyou" class="epm-select">
+        ${SONSYOU_LIST.map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+    </div>`;
+
+  modal.innerHTML = `
+    <div style="background:var(--surface,#1e2433);width:100%;max-height:90vh;overflow-y:auto;border-radius:16px 16px 0 0;padding:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div style="font-size:15px;font-weight:700;color:var(--text);">📷 写真情報を入力</div>
+        <button onclick="closeExtraPhotoModal()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;">✕ キャンセル</button>
+      </div>
+      <img src="${dataURL}" style="width:100%;max-height:180px;object-fit:contain;border-radius:8px;margin-bottom:12px;background:#000;">
+      ${isS3 ? s3Fields : s10Fields}
+      <div class="epm-field">
+        <label class="epm-label">備考（任意）</label>
+        <input id="epm-memo" type="text" class="epm-input" placeholder="メモを入力">
+      </div>
+      <button onclick="saveExtraPhoto('${sectionKey}','${dataURL.substring(0,20)}')" data-dataurl="PLACEHOLDER" style="width:100%;margin-top:8px;background:var(--green,#22c55e);border:none;color:#fff;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;">💾 保存</button>
+    </div>`;
+
+  // dataURLをdata属性で保持（HTMLに直接埋め込まない）
+  modal._dataURL = dataURL;
+  modal._sectionKey = sectionKey;
+  document.body.appendChild(modal);
+
+  // 保存ボタンのonclickを上書き（クロージャでdataURLを渡す）
+  modal.querySelector('button[data-dataurl]').onclick = () => saveExtraPhoto(sectionKey, dataURL);
+}
+
+function toggleBuzaiInput() {
+  const sel = document.getElementById('epm-s3-type');
+  const field = document.getElementById('epm-buzai-field');
+  if (field) field.style.display = sel?.value === '部材記号' ? 'block' : 'none';
+}
+
+function closeExtraPhotoModal() {
+  const m = document.getElementById('extra-photo-modal');
+  if (m) m.remove();
+}
+
+function saveExtraPhoto(sectionKey, dataURL) {
+  const isS3 = sectionKey === 's3';
+  let info = {};
+  const memo = document.getElementById('epm-memo')?.value || '';
+
+  if (isS3) {
+    const type = document.getElementById('epm-s3-type')?.value || '';
+    const buzai = type === '部材記号' ? (document.getElementById('epm-buzai')?.value || '') : '';
+    info = { type, buzai, memo };
+  } else {
+    const buzai   = document.getElementById('epm-buzai-s10')?.value || '';
+    const elemNo  = document.getElementById('epm-element-no')?.value || '';
+    const sonsyou = document.getElementById('epm-sonsyou')?.value || '';
+    info = { buzai, elemNo, sonsyou, memo };
+  }
+
+  const id = 'extra_' + Date.now();
+  if (!state.extraPhotos) state.extraPhotos = [];
+  state.extraPhotos.push({ id, sectionKey, dataURL, info });
+
+  closeExtraPhotoModal();
+  renderExtraPhotoGrid(sectionKey);
+  showToast('✅ 写真を追加しました', 'success');
+}
+
+// 追加写真グリッドを描画
+function renderExtraPhotoGrid(sectionKey) {
+  const grid = document.getElementById('extra-photo-grid-' + sectionKey);
+  if (!grid) return;
+  const photos = (state.extraPhotos || []).filter(p => p.sectionKey === sectionKey);
+  if (photos.length === 0) {
+    grid.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px 0;">追加写真はありません</div>';
+    return;
+  }
+  grid.innerHTML = photos.map(p => {
+    const isS3 = p.sectionKey === 's3';
+    const label = isS3
+      ? (p.info.type === '部材記号' ? `部材記号: ${p.info.buzai}` : p.info.type)
+      : `${p.info.buzai} No.${p.info.elemNo || '-'} ${p.info.sonsyou}`;
+    const memo = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
+    return `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;">
+        <img src="${p.dataURL}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;" onclick="openExtraPhotoLightbox('${p.id}')">
+        <button onclick="deleteExtraPhoto('${p.id}','${sectionKey}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;">✕</button>
+        <div style="padding:6px 8px;">
+          <div style="font-size:11px;font-weight:700;color:var(--text);">${label}</div>
+          ${memo}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function deleteExtraPhoto(id, sectionKey) {
+  state.extraPhotos = (state.extraPhotos || []).filter(p => p.id !== id);
+  renderExtraPhotoGrid(sectionKey);
+  showToast('写真を削除しました', '');
+}
+
+function openExtraPhotoLightbox(id) {
+  const p = (state.extraPhotos || []).find(x => x.id === id);
+  if (!p) return;
+  openPhotoLightbox(null, 0, null, p.dataURL);
+}
+
 // ===== 複数枚写真UI用スタイル追加 =====
 (function injectMultiPhotoStyles() {
   const style = document.createElement('style');
@@ -5110,6 +5373,25 @@ function attachAllGridSwipes(sectionKey) {
       color:#fff; font-size:14px; font-weight:700;
       background:rgba(0,0,0,0.45); padding:3px 12px; border-radius:12px;
     }
+
+    /* 追加写真モーダル */
+    .epm-field {
+      margin-bottom:10px;
+    }
+    .epm-label {
+      display:block; font-size:12px; font-weight:700;
+      color:var(--text2,#9ca3af); margin-bottom:4px;
+    }
+    .epm-select, .epm-input {
+      width:100%; padding:10px 12px;
+      background:var(--surface2,#374151);
+      border:1px solid var(--border,#4b5563);
+      color:var(--text,#f9fafb);
+      border-radius:8px; font-size:14px;
+      box-sizing:border-box;
+      -webkit-appearance:none;
+    }
+    .epm-select { cursor:pointer; }
   `;
   document.head.appendChild(style);
 })();
