@@ -770,14 +770,8 @@ async function renderCombinedViewer(item, tabs, content) {
   } else {
     // ページタブ（複数ページある場合）
     const innerTabs = document.createElement('div');
-    innerTabs.style.cssText = 'display:flex;align-items:center;overflow-x:auto;padding:4px 8px;gap:4px;border-bottom:1px solid var(--border);';
+    innerTabs.style.cssText = 'display:flex;overflow-x:auto;padding:4px 8px;gap:4px;border-bottom:1px solid var(--border);';
     const innerSections = [];
-
-    // 一時保存ボタン（右端に固定）
-    const tempSaveBtn = document.createElement('button');
-    tempSaveBtn.textContent = '💾 一時保存';
-    tempSaveBtn.style.cssText = 'margin-left:auto;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;';
-    tempSaveBtn.onclick = () => saveTempData();
 
     for (let i = 0; i < s9Pages.length; i++) {
       const p = s9Pages[i];
@@ -830,9 +824,7 @@ async function renderCombinedViewer(item, tabs, content) {
       }, 300);
     }
 
-    innerTabs.appendChild(tempSaveBtn);
     if (s9Pages.length > 1) secDraw.insertBefore(innerTabs, secDraw.firstChild);
-    else secDraw.insertBefore(innerTabs, secDraw.firstChild);
   }
 }
 async function renderDrawViewer(item, tabs, content) {
@@ -3201,166 +3193,7 @@ function rotateToAngle(key, angleDeg) {
   renderSVGObjects(key);
 }
 
-// その2・その4の書き込み済み図面を個別ダウンロード
-async function downloadDrawKey(key, pageNum) {
-  // まず保存してからダウンロード
-  await saveDraw(key, pageNum);
-  await new Promise(r => setTimeout(r, 300));
 
-  const drawingDataURL = state.drawings[key];
-  if (!drawingDataURL) { showToast('保存データがありません', 'error'); return; }
-
-  showToast('📥 生成中...', '');
-  try {
-    const m    = key.match(/p(\d+)$/);
-    const pnum = m ? parseInt(m[1]) : pageNum;
-    let baseDataURL = null;
-    if (pnum && state.pdfDoc) {
-      const page = await state.pdfDoc.getPage(pnum);
-      const vp   = page.getViewport({ scale: 2.0 });
-      const cv   = document.createElement('canvas');
-      cv.width   = vp.width; cv.height = vp.height;
-      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
-      baseDataURL = cv.toDataURL('image/jpeg', 0.92);
-    }
-    const cv  = document.createElement('canvas');
-    const ctx = cv.getContext('2d');
-    const baseImg = await loadImage(baseDataURL || drawingDataURL);
-    cv.width = baseImg.width; cv.height = baseImg.height;
-    if (baseDataURL) { ctx.drawImage(baseImg, 0, 0); }
-    else { ctx.fillStyle='#fff'; ctx.fillRect(0,0,cv.width,cv.height); }
-    const drawImg = await loadImage(drawingDataURL);
-    ctx.drawImage(drawImg, 0, 0, cv.width, cv.height);
-
-    const a    = document.createElement('a');
-    a.href     = cv.toDataURL('image/jpeg', 0.92);
-    a.download = `${state.pdfName}_${key}_書込済み.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    showToast('✅ ダウンロードしました', 'success');
-  } catch(err) {
-    showToast('❌ ダウンロードに失敗しました', 'error');
-  }
-}
-
-function debugCheckSaveData() {
-  const lines = [];
-  lines.push(`=== drawState キー一覧 ===`);
-  for (const [key, ds] of Object.entries(drawState)) {
-    if (!ds) continue;
-    const objCount = ds.objects?.length || 0;
-    const penCount = ds.penStrokes?.length || 0;
-    const hasPen   = !!ds.savedPenData;
-    if (objCount > 0 || penCount > 0 || hasPen) {
-      lines.push(`[${key}] SVG:${objCount}個 ペンストローク:${penCount}個 ペン画像:${hasPen?'あり':'なし'}`);
-    }
-  }
-  if (lines.length === 1) lines.push('（書き込みデータなし）');
-
-  // Canvas/SVGのサイズ確認
-  lines.push('');
-  lines.push(`=== Canvas/SVGサイズ確認 ===`);
-  for (const key of Object.keys(drawState)) {
-    const canvas = document.getElementById(`drawcanvas-${key}`);
-    const svg    = document.getElementById(`drawsvg-${key}`);
-    if (canvas || svg) {
-      const cW = canvas?.offsetWidth || 0;
-      const cH = canvas?.offsetHeight || 0;
-      const cBW = canvas?.getBoundingClientRect().width || 0;
-      const ds = drawState[key];
-      const objCount = ds?.objects?.length || 0;
-      if (objCount > 0 || cW > 0) {
-        lines.push(`[${key}] canvas offset:${cW}x${cH} rect:${Math.round(cBW)} SVG:${objCount}個`);
-        if (ds?.objects?.length > 0) {
-          const obj = ds.objects[0];
-          lines.push(`  → 1個目: x1=${obj.x1.toFixed(3)} y1=${obj.y1.toFixed(3)}`);
-          lines.push(`  → px換算: x1=${Math.round(obj.x1*cW)} y1=${Math.round(obj.y1*cH)}`);
-        }
-      }
-    }
-  }
-
-  lines.push('');
-  lines.push(`=== state.drawings キー一覧 ===`);
-  const dkeys = Object.keys(state.drawings||{});
-  if (dkeys.length === 0) lines.push('（なし）');
-  else dkeys.forEach(k => lines.push(k));
-  alert(lines.join('\n'));
-}
-
-function debugRenderInfo(key) {
-  const canvas = document.getElementById(`drawcanvas-${key}`);
-  const svg    = document.getElementById(`drawsvg-${key}`);
-  const ds     = drawState[key];
-  const lines  = [];
-  lines.push(`key: ${key}`);
-  lines.push(`canvas: ${canvas ? `${canvas.offsetWidth}x${canvas.offsetHeight} (pixel:${canvas.width}x${canvas.height})` : 'なし'}`);
-  lines.push(`svg: ${svg ? `children:${svg.children.length}` : 'なし'}`);
-  lines.push(`objects: ${ds?.objects?.length || 0}個`);
-  if (ds?.objects?.length > 0) {
-    ds.objects.forEach((obj, i) => {
-      const W = canvas?.offsetWidth || 0;
-      const H = canvas?.offsetHeight || 0;
-      lines.push(`[${i}] type:${obj.type} x1:${obj.x1.toFixed(3)} y1:${obj.y1.toFixed(3)} → px(${Math.round(obj.x1*W)},${Math.round(obj.y1*H)})`);
-    });
-  }
-  lines.push(`penStrokes: ${ds?.penStrokes?.length || 0}個`);
-  lines.push(`savedPenData: ${ds?.savedPenData ? '有' : '無'}`);
-  // 強制再描画を試みる
-  lines.push('--- 強制renderSVGObjects実行 ---');
-  renderSVGObjects(key);
-  lines.push(`実行後 svg.children: ${svg?.children?.length || 0}`);
-  alert(lines.join('\n'));
-}
-
-// ===== 一時保存（localStorageへ即時保存）=====
-function saveTempData() {
-  try {
-    // 現在表示中のキャンバスのペンデータを収集
-    for (const key of Object.keys(drawState)) {
-      const ds = drawState[key];
-      if (!ds) continue;
-      const canvas = document.getElementById(`drawcanvas-${key}`);
-      if (canvas && canvas.width > 0) {
-        try { ds.savedPenData = canvas.toDataURL('image/png'); } catch(e) {}
-      }
-    }
-
-    const drawStateExport = {};
-    for (const key of Object.keys(drawState)) {
-      const ds = drawState[key];
-      if (!ds) continue;
-      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData || ds.penStrokes?.length > 0) {
-        drawStateExport[key] = {
-          objects:    ds.objects    || [],
-          penStrokes: ds.penStrokes || [],
-          savedPenData: ds.savedPenData || null,
-          color:      ds.color,
-          sizeMM:     ds.sizeMM,
-          pattern:    ds.pattern,
-        };
-      }
-    }
-
-    const tempData = {
-      version:   '1.4.6',
-      savedAt:   new Date().toISOString(),
-      pdfName:   state.pdfName || '橋梁点検',
-      photos:    state.photos  || {},
-      drawings:  state.drawings || {},
-      drawState: drawStateExport,
-    };
-
-    localStorage.setItem('bridge_temp_save', JSON.stringify(tempData));
-    const now = new Date();
-    const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
-    showToast(`✅ 一時保存しました（${timeStr}）`, 'success');
-  } catch(err) {
-    console.error(err);
-    showToast('❌ 一時保存に失敗しました', 'error');
-  }
-}
 
 // ===== 作業を保存（1タップJSON保存）=====
 async function saveWorkData() {
@@ -3444,145 +3277,7 @@ async function saveWorkData() {
   }
 }
 
-// ===== その3写真を個別ダウンロード =====
-async function downloadSurveyPhotos() {
-  const keys = Object.keys(state.photos || {}).filter(k => k.startsWith('s'));
-  if (keys.length === 0) { showToast('撮影写真がありません', 'error'); return; }
 
-  showToast('📦 ZIP生成中...', '');
-  try {
-    const zip    = new JSZip();
-    const folder = zip.folder(`${state.pdfName}_現地状況写真`);
-    let count = 0;
-    for (const key of keys) {
-      const photo   = state.photos[key];
-      const dataURL = typeof photo === 'string' ? photo : photo?.dataURL;
-      if (!dataURL) continue;
-      const slot  = SURVEY_PHOTO_SLOTS.find(s => s.key === key);
-      const label = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : `photo_${++count}`;
-      const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
-      folder.file(`${label}.${ext}`, dataURL.split(',')[1], { base64: true });
-      count++;
-    }
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `${state.pdfName}_現地状況写真.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
-    showToast(`✅ ${count}枚をZIPで保存しました`, 'success');
-  } catch(err) {
-    showToast('❌ 保存に失敗しました', 'error');
-  }
-}
-
-// ===== AirDrop / データ共有 =====
-async function exportForAirDrop() {
-  showToast('📡 データを準備中...', '');
-  try {
-    // drawStateからオブジェクトデータとペンデータを収集
-    const drawStateExport = {};
-    for (const key of Object.keys(drawState)) {
-      const ds = drawState[key];
-      if (!ds) continue;
-      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData || ds.penStrokes?.length > 0) {
-        drawStateExport[key] = {
-          objects:      ds.objects      || [],
-          penStrokes:   ds.penStrokes   || [],
-          savedPenData: ds.savedPenData || null,
-          color:        ds.color,
-          sizeMM:       ds.sizeMM,
-          pattern:      ds.pattern,
-        };
-      }
-    }
-
-    // PDFをBase64に変換（分割処理で安全に）
-    let pdfBase64 = null;
-    if (state.pdfData) {
-      showToast('📄 PDFを変換中...', '');
-      try {
-        const bytes  = new Uint8Array(state.pdfData);
-        // 分割してBase64変換（スタックオーバーフロー防止）
-        const chunkSize = 8192;
-        let binary = '';
-        for (let i = 0; i < bytes.length; i += chunkSize) {
-          const chunk = bytes.subarray(i, i + chunkSize);
-          binary += String.fromCharCode(...chunk);
-        }
-        pdfBase64 = btoa(binary);
-      } catch(pdfErr) {
-        console.warn('PDF変換失敗（スキップ）:', pdfErr);
-        pdfBase64 = null;
-        showToast('⚠️ PDFが大きすぎるため省略します', '');
-        await new Promise(r => setTimeout(r, 1500));
-      }
-    }
-
-    // 写真データを圧縮（容量削減）
-    showToast('📸 写真を圧縮中...', '');
-    const compressedPhotos = {};
-    for (const [k, v] of Object.entries(state.photos || {})) {
-      const dataURL = typeof v === 'string' ? v : v?.dataURL;
-      if (!dataURL) continue;
-      try {
-        const compressed = await compressImage(dataURL, 0.7, 1200);
-        compressedPhotos[k] = compressed;
-      } catch(e) {
-        compressedPhotos[k] = dataURL;
-      }
-    }
-
-    showToast('📦 ファイル生成中...', '');
-    const exportData = {
-      version:    '1.3.4',
-      exportedAt: new Date().toISOString(),
-      pdfName:    state.pdfName  || '橋梁点検',
-      pdfBase64:  pdfBase64,
-      photos:     compressedPhotos,
-      drawings:   state.drawings || {},
-      drawState:  drawStateExport,
-    };
-
-    const json     = JSON.stringify(exportData);
-    const blob     = new Blob([json], { type: 'application/json' });
-    const url      = URL.createObjectURL(blob);
-    const a        = document.createElement('a');
-    const fileName = `${state.pdfName || '点検データ'}_共有.json`;
-    a.href     = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-    const sizeMB     = (blob.size / 1024 / 1024).toFixed(1);
-    const objCount   = Object.keys(drawStateExport).length;
-    const photoCount = Object.keys(compressedPhotos).length;
-    const pdfInfo    = pdfBase64 ? '・PDF含む' : '';
-    showToast(`✅ 写真${photoCount}枚・書き込み${objCount}ページ${pdfInfo}（${sizeMB}MB）を保存`, 'success');
-
-    setTimeout(() => {
-      alert(
-        '📡 AirDrop共有の手順\n\n' +
-        '① ファイルアプリを開く\n' +
-        '② ダウンロードフォルダの\n' +
-        '　「' + fileName + '」を長押し\n' +
-        '③ 共有（□↑）→ AirDrop\n' +
-        '④ 相手のiPadを選択\n\n' +
-        '受け取る側はトップ画面の\n' +
-        '「データ取り込み」をタップ'
-      );
-    }, 500);
-
-  } catch(err) {
-    console.error('exportForAirDrop error:', err);
-    showToast(`❌ 共有に失敗しました: ${err.message || err}`, 'error');
-  }
-}
 
 // 画像圧縮ユーティリティ
 function compressImage(dataURL, quality, maxWidth) {
@@ -3603,32 +3298,6 @@ function compressImage(dataURL, quality, maxWidth) {
 
 function importData(input) {
   const file = input.files[0];
-
-  // localStorageに一時保存データがある場合は案内を表示
-  const tempRaw = localStorage.getItem('bridge_temp_save');
-  if (!file && tempRaw) {
-    try {
-      const tempData = JSON.parse(tempRaw);
-      const savedAt  = tempData.savedAt ? new Date(tempData.savedAt) : null;
-      const timeStr  = savedAt
-        ? `${savedAt.getMonth()+1}/${savedAt.getDate()} ${savedAt.getHours()}:${String(savedAt.getMinutes()).padStart(2,'0')}`
-        : '不明';
-      const ok = confirm(
-        `📋 前回の一時保存データがあります\n\n` +
-        `・橋梁名：${tempData.pdfName || '不明'}\n` +
-        `・保存日時：${timeStr}\n\n` +
-        `この一時保存データを読み込みますか？`
-      );
-      if (ok) {
-        applyImportData(tempData, null, null);
-        input.value = '';
-        return;
-      }
-    } catch(e) {
-      // 壊れていたら無視してファイル選択へ
-    }
-  }
-
   if (!file) return;
 
   const isZip  = file.name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
@@ -4037,16 +3706,6 @@ async function saveDraw(key, pageNum) {
   }
 }
 
-// clearDrawは削除（undoで代替）
-function clearDraw(key) {
-  const ds = drawState[key];
-  if (!ds) return;
-  ds.objects = [];
-  ds.selectedId = null;
-  const canvas = document.getElementById(`drawcanvas-${key}`);
-  if (canvas) { canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); ds.penHistory=[]; }
-  renderSVGObjects(key);
-}
 
 // ===== 写真ビューア =====
 function renderPhotoViewer(item, tabs, content) {
@@ -4682,62 +4341,6 @@ function loadImage(src) {
   });
 }
 
-async function downloadPhotos() {
-  const keys = Object.keys(state.photos);
-  if (keys.length === 0) { showToast('撮影写真がありません', 'error'); return; }
-
-  showToast('📦 ZIP生成中...', '');
-
-  try {
-    const zip = new JSZip();
-    const folder = zip.folder(`${state.pdfName}_撮影写真`);
-
-    let count = 0;
-    for (const key of keys) {
-      const photo = state.photos[key];
-      if (!photo) continue;
-
-      const dataURL = typeof photo === 'string' ? photo : photo.dataURL;
-      if (!dataURL || !dataURL.startsWith('data:image')) continue;
-
-      // スロットから写真番号を取得
-      const slot = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS].find(s => s.key === key);
-      const label = slot
-        ? `No${String(slot.prevNo).padStart(3,'0')}`
-        : `photo_${count+1}`;
-
-      // base64部分のみ取得
-      const b64 = dataURL.split(',')[1];
-      if (!b64) continue;
-
-      // 拡張子判定
-      const ext = dataURL.includes('image/png') ? 'png' : 'jpg';
-      folder.file(`${label}.${ext}`, b64, { base64: true });
-      count++;
-    }
-
-    if (count === 0) {
-      showToast('保存できる写真がありません', 'error');
-      return;
-    }
-
-    const blob = await zip.generateAsync({ type: 'blob' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `${state.pdfName}_撮影写真.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 3000);
-
-    showToast(`✅ ${count}枚をZIPで保存しました`, 'success');
-
-  } catch(err) {
-    console.error(err);
-    showToast('❌ 保存に失敗しました', 'error');
-  }
-}
 
 // ===== ナビゲーション =====
 // 現在どの画面にいるかだけ管理
