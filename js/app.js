@@ -770,8 +770,14 @@ async function renderCombinedViewer(item, tabs, content) {
   } else {
     // ページタブ（複数ページある場合）
     const innerTabs = document.createElement('div');
-    innerTabs.style.cssText = 'display:flex;overflow-x:auto;padding:4px 8px;gap:4px;border-bottom:1px solid var(--border);';
+    innerTabs.style.cssText = 'display:flex;align-items:center;overflow-x:auto;padding:4px 8px;gap:4px;border-bottom:1px solid var(--border);';
     const innerSections = [];
+
+    // 一時保存ボタン（右端に固定）
+    const tempSaveBtn = document.createElement('button');
+    tempSaveBtn.textContent = '💾 一時保存';
+    tempSaveBtn.style.cssText = 'margin-left:auto;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;';
+    tempSaveBtn.onclick = () => saveTempData();
 
     for (let i = 0; i < s9Pages.length; i++) {
       const p = s9Pages[i];
@@ -824,7 +830,9 @@ async function renderCombinedViewer(item, tabs, content) {
       }, 300);
     }
 
+    innerTabs.appendChild(tempSaveBtn);
     if (s9Pages.length > 1) secDraw.insertBefore(innerTabs, secDraw.firstChild);
+    else secDraw.insertBefore(innerTabs, secDraw.firstChild);
   }
 }
 async function renderDrawViewer(item, tabs, content) {
@@ -3195,6 +3203,54 @@ function rotateToAngle(key, angleDeg) {
 
 
 
+// ===== 一時保存（localStorageへ即時保存）=====
+function saveTempData() {
+  try {
+    // 現在表示中のキャンバスのペンデータを収集
+    for (const key of Object.keys(drawState)) {
+      const ds = drawState[key];
+      if (!ds) continue;
+      const canvas = document.getElementById(`drawcanvas-${key}`);
+      if (canvas && canvas.width > 0) {
+        try { ds.savedPenData = canvas.toDataURL('image/png'); } catch(e) {}
+      }
+    }
+
+    const drawStateExport = {};
+    for (const key of Object.keys(drawState)) {
+      const ds = drawState[key];
+      if (!ds) continue;
+      if ((ds.objects && ds.objects.length > 0) || ds.savedPenData || ds.penStrokes?.length > 0) {
+        drawStateExport[key] = {
+          objects:    ds.objects    || [],
+          penStrokes: ds.penStrokes || [],
+          savedPenData: ds.savedPenData || null,
+          color:      ds.color,
+          sizeMM:     ds.sizeMM,
+          pattern:    ds.pattern,
+        };
+      }
+    }
+
+    const tempData = {
+      version:   '1.4.6',
+      savedAt:   new Date().toISOString(),
+      pdfName:   state.pdfName || '橋梁点検',
+      photos:    state.photos  || {},
+      drawings:  state.drawings || {},
+      drawState: drawStateExport,
+    };
+
+    localStorage.setItem('bridge_temp_save', JSON.stringify(tempData));
+    const now = new Date();
+    const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+    showToast(`✅ 一時保存しました（${timeStr}）`, 'success');
+  } catch(err) {
+    console.error(err);
+    showToast('❌ 一時保存に失敗しました', 'error');
+  }
+}
+
 // ===== 作業を保存（1タップJSON保存）=====
 async function saveWorkData() {
   showToast('💾 保存中...', '');
@@ -3298,6 +3354,32 @@ function compressImage(dataURL, quality, maxWidth) {
 
 function importData(input) {
   const file = input.files[0];
+
+  // localStorageに一時保存データがある場合は案内を表示
+  const tempRaw = localStorage.getItem('bridge_temp_save');
+  if (!file && tempRaw) {
+    try {
+      const tempData = JSON.parse(tempRaw);
+      const savedAt  = tempData.savedAt ? new Date(tempData.savedAt) : null;
+      const timeStr  = savedAt
+        ? `${savedAt.getMonth()+1}/${savedAt.getDate()} ${savedAt.getHours()}:${String(savedAt.getMinutes()).padStart(2,'0')}`
+        : '不明';
+      const ok = confirm(
+        `📋 前回の一時保存データがあります\n\n` +
+        `・橋梁名：${tempData.pdfName || '不明'}\n` +
+        `・保存日時：${timeStr}\n\n` +
+        `この一時保存データを読み込みますか？`
+      );
+      if (ok) {
+        applyImportData(tempData, null, null);
+        input.value = '';
+        return;
+      }
+    } catch(e) {
+      // 壊れていたら無視してファイル選択へ
+    }
+  }
+
   if (!file) return;
 
   const isZip  = file.name.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
