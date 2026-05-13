@@ -1,3 +1,24 @@
+// JSZip フォールバック：ローカルファイルが読み込まれなかった場合の保険
+(function() {
+  function loadJSZip(cb) {
+    const s = document.createElement('script');
+    s.src = 'js/jszip.min.js';
+    s.onload = cb;
+    s.onerror = function() {
+      console.error('jszip.min.js の読み込みに失敗しました');
+    };
+    document.head.appendChild(s);
+  }
+  if (typeof JSZip === 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() {
+        if (typeof JSZip === 'undefined') loadJSZip();
+      });
+    } else {
+      loadJSZip();
+    }
+  }
+})();
 
 // PDF.jsワーカー設定（即時実行）
 // pdf.worker をインライン化（オフライン対応）
@@ -3447,6 +3468,10 @@ function saveTempData() {
 
 // ===== 作業を保存（1タップJSON保存）=====
 async function saveWorkData() {
+  if (typeof JSZip === 'undefined') {
+    showToast('❌ JSZipが読み込まれていません。ページを再読み込みしてください。', 'error');
+    return;
+  }
   showToast('💾 保存中...', '');
   try {
     // 全キャンバスのペンデータを収集
@@ -4490,6 +4515,10 @@ function deletePhoto(slotKey, sectionKey) {
 
 // ===== ダウンロード =====
 async function downloadAll() {
+  if (typeof JSZip === 'undefined') {
+    showToast('❌ JSZipが読み込まれていません。ページを再読み込みしてください。', 'error');
+    return;
+  }
   const photoKeys = Object.keys(state.photos);
 
   showToast('📦 データを収集中...', '');
