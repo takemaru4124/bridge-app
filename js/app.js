@@ -4033,7 +4033,7 @@ function setSlotPhotoIndex(slotKey, idx) {
   const prevBtn = wrap.querySelector('.curr-nav-prev');
   const nextBtn = wrap.querySelector('.curr-nav-next');
 
-  // スライドアニメーション（stageをclip、imgをスライド）
+  // スライドアニメーション
   if (img && stage) {
     const dir = safeIdx >= prevIdx ? 1 : -1;
     img.style.transition = 'none';
@@ -4091,7 +4091,7 @@ function renderPhotoSlot(slot, sectionKey) {
     const nextNav = `<button class="curr-nav curr-nav-next" style="${curIdx < photoList.length - 1 ? '' : 'display:none'}" onclick="event.stopPropagation();setSlotPhotoIndex('${slot.key}',${curIdx + 1})">›</button>`;
 
     currHTML = `
-      <div class="photo-half-done" id="curr-photo-wrap-${slot.key}">
+      <div class="curr-photo-wrap" id="curr-photo-wrap-${slot.key}">
         <div class="curr-img-stage">
           <img class="curr-photo-img" src="${photoList[curIdx].dataURL}" onclick="openPhotoLightbox('${slot.key}',${curIdx})">
         </div>
@@ -4759,10 +4759,10 @@ currentScreen = 'home';
       padding:1px 7px; margin-left:4px; vertical-align:middle;
     }
 
-    /* 撮影済みエリア（前回写真と同サイズ・フルサイズ表示） */
-    .photo-half-done {
+    /* 撮影済みエリア：既存のphoto-half-doneは上書きせず新クラスを使用 */
+    .curr-photo-wrap {
       position:relative; width:100%; height:100%;
-      background:#000; overflow:hidden;
+      background:#000;
       display:flex; flex-direction:column;
     }
     /* スライドアニメーション用ステージ（overflow:hiddenでクリップ） */
