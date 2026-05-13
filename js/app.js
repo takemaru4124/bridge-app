@@ -3475,7 +3475,7 @@ async function saveWorkData() {
     for (const [key, raw] of Object.entries(state.photos || {})) {
       const list = normalizePhotoList(raw);
       const compressed = await Promise.all(list.map(p =>
-        compressImage(p.dataURL, 0.80, 1920).then(d => ({ ...p, dataURL: d }))
+        compressImage(p.dataURL, 0.75, 1280).then(d => ({ ...p, dataURL: d }))
       ));
       compressedPhotos[key] = compressed;
     }
@@ -4553,7 +4553,7 @@ async function downloadAll() {
     const raw  = state.photos[key];
     const list = normalizePhotoList(raw);
     compressedPhotoMap[key] = await Promise.all(
-      list.map(p => compressImage(p.dataURL, 0.80, 1920).then(d => ({ ...p, dataURL: d })))
+      list.map(p => compressImage(p.dataURL, 0.75, 1280).then(d => ({ ...p, dataURL: d })))
     );
   }
 
