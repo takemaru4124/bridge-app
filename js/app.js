@@ -778,6 +778,8 @@ async function renderCombinedViewer(item, tabs, content) {
         { appendChild: () => {}, querySelectorAll: () => [] },
         secPhoto);
     }
+    // 追加写真グリッドを常に最新化
+    renderExtraPhotoGrid('s10');
   };
 
   // 損傷図を描画
@@ -799,7 +801,7 @@ async function renderCombinedViewer(item, tabs, content) {
     const extraPhotoBtn = document.createElement('button');
     extraPhotoBtn.textContent = '📷 写真追加';
     extraPhotoBtn.style.cssText = 'flex-shrink:0;background:var(--accent,#3b82f6);border:none;color:#fff;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;margin-left:6px;';
-    extraPhotoBtn.onclick = () => startExtraPhoto('s9s10');
+    extraPhotoBtn.onclick = () => startExtraPhoto('s10');
 
     for (let i = 0; i < s9Pages.length; i++) {
       const p = s9Pages[i];
@@ -5225,7 +5227,10 @@ function saveExtraPhoto(sectionKey, dataURL) {
   state.extraPhotos.push({ id, sectionKey, dataURL, info });
 
   closeExtraPhotoModal();
+  // s9s10からの追加もs10グリッドに表示
   renderExtraPhotoGrid(sectionKey);
+  if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
+  if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
   showToast('✅ 写真を追加しました', 'success');
 }
 
@@ -5233,7 +5238,9 @@ function saveExtraPhoto(sectionKey, dataURL) {
 function renderExtraPhotoGrid(sectionKey) {
   const grid = document.getElementById('extra-photo-grid-' + sectionKey);
   if (!grid) return;
-  const photos = (state.extraPhotos || []).filter(p => p.sectionKey === sectionKey);
+  // s10とs9s10は同じ追加写真プール
+  const keys = sectionKey === 's10' ? ['s10', 's9s10'] : [sectionKey];
+  const photos = (state.extraPhotos || []).filter(p => keys.includes(p.sectionKey));
   if (photos.length === 0) {
     grid.innerHTML = '<div style="color:var(--text2);font-size:12px;padding:8px 0;">追加写真はありません</div>';
     return;
