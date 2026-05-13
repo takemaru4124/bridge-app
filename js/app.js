@@ -1412,6 +1412,11 @@ function setupPinchZoom(key) {
       isPinching = true; isPanning = false;
       initDist = getDist(e.touches);
       lastScale = scale; lastPanX = panX; lastPanY = panY;
+      // 描画中だった場合は描画を中断（余計な線を防ぐ）
+      if (drawState[key]) {
+        drawState[key].drawing = false;
+        drawState[key]._pinchInProgress = true;
+      }
       e.stopPropagation(); e.preventDefault();
     } else if (e.touches.length === 1) {
       const isScrollTool = drawState[key]?.tool === 'scroll';
@@ -1423,7 +1428,7 @@ function setupPinchZoom(key) {
         if (drawState[key]) drawState[key].drawing = false;
         e.stopPropagation(); e.preventDefault();
       } else {
-        // 描画ツール：タッチは描画に渡す（パンしない）
+        // ピンチ直後の1本指は描画しない（_pinchInProgressが残っている間）
         isPanning = false; isPinching = false;
       }
     }
@@ -1469,6 +1474,14 @@ function setupPinchZoom(key) {
       // 描画ツール使用中はcanvas側のonEndに任せる（drawing=falseにしない）
       if (drawState[key] && drawState[key].tool === 'scroll') {
         drawState[key].drawing = false;
+      }
+      // ピンチ終了後は_pinchInProgressをクリア
+      if (drawState[key]) {
+        drawState[key].drawing = false;
+        // 次のtouchstartまで待ってからリセット
+        setTimeout(() => {
+          if (drawState[key]) drawState[key]._pinchInProgress = false;
+        }, 50);
       }
     }
   });
@@ -2192,6 +2205,12 @@ function setupDrawEvents(canvas, svg, key) {
       return;
     }
     const ds = drawState[key];
+
+    // ピンチ直後は描画しない（余計な線防止）
+    if (ds?._pinchInProgress) {
+      ds._pinchInProgress = false;
+      return;
+    }
 
     // スクロールモードはパンに渡す
     if (ds?.tool === 'scroll') return;
