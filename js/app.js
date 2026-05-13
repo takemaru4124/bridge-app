@@ -3410,7 +3410,26 @@ function saveTempData() {
       drawState: drawStateExport,
     };
 
-    localStorage.setItem('bridge_temp_save', JSON.stringify(tempData));
+    // localStorage容量超過対策：まず写真込みで試み、失敗したら写真なしで保存
+    const trySet = (data) => {
+      const json = JSON.stringify(data);
+      // 概算サイズ確認（5MBを超えそうなら先に警告）
+      if (json.length > 4.5 * 1024 * 1024) throw new Error('SIZE_OVER');
+      localStorage.setItem('bridge_temp_save', json);
+    };
+
+    try {
+      trySet(tempData);
+    } catch(e) {
+      // 写真を除いて再試行
+      const dataNoPhotos = { ...tempData, photos: {} };
+      localStorage.setItem('bridge_temp_save', JSON.stringify(dataNoPhotos));
+      const now = new Date();
+      const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
+      showToast(`⚠️ 一時保存しました（写真はZIP保存を使用してください）`, '');
+      return;
+    }
+
     const now = new Date();
     const timeStr = `${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}`;
     showToast(`✅ 一時保存しました（${timeStr}）`, 'success');
@@ -3450,27 +3469,38 @@ async function saveWorkData() {
       }
     }
 
+    // 写真を圧縮（複数枚対応・長辺1920px・JPEG80%）
+    showToast('🖼️ 写真を圧縮中...', '');
+    const compressedPhotos = {};
+    for (const [key, raw] of Object.entries(state.photos || {})) {
+      const list = normalizePhotoList(raw);
+      const compressed = await Promise.all(list.map(p =>
+        compressImage(p.dataURL, 0.80, 1920).then(d => ({ ...p, dataURL: d }))
+      ));
+      compressedPhotos[key] = compressed;
+    }
+
     const saveData = {
       version:   '1.4.6',
       savedAt:   new Date().toISOString(),
       pdfName:   state.pdfName || '橋梁点検',
-      photos:    state.photos  || {},
+      photos:    compressedPhotos,
       drawings:  state.drawings || {},
       drawState: drawStateExport,
     };
 
     const zip = new JSZip();
 
-    // 作業データ（JSON）- 英語ファイル名で確実に保存
+    // 作業データ（JSON）
     zip.file('work_data.json', JSON.stringify(saveData));
 
-    // PDFをZIPに直接バイナリ格納（Base64変換を省略してメモリ節約）
+    // PDFをZIPに直接バイナリ格納
     if (state.pdfData) {
       try {
         showToast('📄 PDF同梱中...', '');
         zip.file(
           `${state.pdfName || '前回調書'}.pdf`,
-          state.pdfData  // ArrayBufferをそのまま渡す
+          state.pdfData
         );
       } catch(e) {
         console.warn('PDF同梱スキップ:', e);
@@ -3492,7 +3522,7 @@ async function saveWorkData() {
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 3000);
 
-    const photoCount = Object.keys(state.photos || {}).length;
+    const photoCount = Object.values(compressedPhotos).reduce((n, v) => n + (Array.isArray(v) ? v.length : 1), 0);
     const hasPDF     = !!state.pdfData;
     showToast(`✅ 保存しました（写真${photoCount}枚${hasPDF ? '・PDF含む' : ''}）`, 'success');
 
@@ -4516,6 +4546,17 @@ async function downloadAll() {
     return;
   }
 
+  // 写真を圧縮（長辺1920px・JPEG80%）
+  showToast('🖼️ 写真を圧縮中...', '');
+  const compressedPhotoMap = {};
+  for (const key of photoKeys) {
+    const raw  = state.photos[key];
+    const list = normalizePhotoList(raw);
+    compressedPhotoMap[key] = await Promise.all(
+      list.map(p => compressImage(p.dataURL, 0.80, 1920).then(d => ({ ...p, dataURL: d })))
+    );
+  }
+
   showToast('📦 ZIP生成中...', '');
 
   try {
@@ -4540,15 +4581,11 @@ async function downloadAll() {
     if (surveyPhotos.length > 0) {
       const f3 = zip.folder('その３_現地状況写真');
       for (const key of surveyPhotos) {
-        const photoRaw = state.photos[key];
-        const slot  = SURVEY_PHOTO_SLOTS.find(s => s.key === key);
+        const slot      = SURVEY_PHOTO_SLOTS.find(s => s.key === key);
         const baseLabel = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
-        // 複数枚対応：配列に正規化
-        const list = Array.isArray(photoRaw) ? photoRaw
-                   : photoRaw?.dataURL ? [photoRaw]
-                   : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+        const list      = compressedPhotoMap[key] || [];
         list.forEach((p, idx) => {
-          const dataURL = typeof p === 'string' ? p : p?.dataURL;
+          const dataURL = p?.dataURL;
           if (!dataURL?.startsWith('data:image')) return;
           const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
           const fname = list.length === 1 ? `${baseLabel}.${ext}` : `${baseLabel}_${idx + 1}.${ext}`;
@@ -4563,16 +4600,12 @@ async function downloadAll() {
       const f10d = zip.folder('その１０_損傷写真/損傷');
       const f10n = zip.folder('その１０_損傷写真/NON');
       for (const key of damagePhotos) {
-        const photoRaw = state.photos[key];
-        const slot  = DAMAGE_PHOTO_SLOTS.find(s => s.key === key);
+        const slot      = DAMAGE_PHOTO_SLOTS.find(s => s.key === key);
         const baseLabel = slot ? `No${String(slot.prevNo).padStart(3,'0')}` : key;
-        const folder = (slot?.isNON ? f10n : f10d);
-        // 複数枚対応：配列に正規化
-        const list = Array.isArray(photoRaw) ? photoRaw
-                   : photoRaw?.dataURL ? [photoRaw]
-                   : typeof photoRaw === 'string' ? [{ dataURL: photoRaw }] : [];
+        const folder    = slot?.isNON ? f10n : f10d;
+        const list      = compressedPhotoMap[key] || [];
         list.forEach((p, idx) => {
-          const dataURL = typeof p === 'string' ? p : p?.dataURL;
+          const dataURL = p?.dataURL;
           if (!dataURL?.startsWith('data:image')) return;
           const ext   = dataURL.includes('image/png') ? 'png' : 'jpg';
           const fname = list.length === 1 ? `${baseLabel}.${ext}` : `${baseLabel}_${idx + 1}.${ext}`;
