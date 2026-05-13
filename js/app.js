@@ -949,12 +949,15 @@ let _popupSlotKey = null;
 let _popupSlotIndex = 0;
 
 function openPhotoPopup(slotKey) {
-  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
-  const idx   = slots.findIndex(s => s.key === slotKey);
+  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON)
+    .slice()
+    .sort((a, b) => (a.span || 1) - (b.span || 1) || a.prevNo - b.prevNo);
+  const idx = slots.findIndex(s => s.key === slotKey);
   if (idx < 0) return;
 
   _popupSlotKey   = slotKey;
   _popupSlotIndex = idx;
+  _popupPhotoIdx  = 0;
   updatePopup(slots[idx]);
 
   const popup = document.getElementById('photo-popup');
@@ -1201,7 +1204,10 @@ function updatePopup(slot) {
 }
 
 function popupNav(dir) {
-  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+  // 径間でグループ化し、径間内No.順→次の径間の順で並べる
+  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON)
+    .slice()
+    .sort((a, b) => (a.span || 1) - (b.span || 1) || a.prevNo - b.prevNo);
   _popupSlotIndex = Math.max(0, Math.min(slots.length - 1, _popupSlotIndex + dir));
   _popupSlotKey   = slots[_popupSlotIndex].key;
   _popupPhotoIdx  = 0;
