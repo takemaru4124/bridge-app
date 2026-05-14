@@ -2567,6 +2567,7 @@ function setupDrawEvents(canvas, svg, key) {
       // 損傷追加モード中なら引き出し線確定後にカメラ起動
       // ※ setToolを呼ぶとds.toolが変わるため、フラグを先に退避してから処理する
       const wasDamageAdd = ds.damageAddMode;
+      showToast(`DEBUG: tool=${ds.tool} damageAdd=${ds.damageAddMode} dist=${dist.toFixed(3)}`, 'info');
       if (wasDamageAdd && dist > 0.01) {
         ds.damageAddMode = false;
         const btn = document.getElementById(`tool-damageadd-${key}`);
