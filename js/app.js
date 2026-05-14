@@ -5365,7 +5365,10 @@ function openExtraPhotoModal(sectionKey, dataURL) {
   modal._dataURL = dataURL;
   modal._sectionKey = sectionKey;
   document.body.appendChild(modal);
-  modal.querySelector('button[data-save]').onclick = () => saveExtraPhoto(sectionKey, dataURL);
+  modal.querySelector('button[data-save]').onclick = () => {
+    hideExtraPhotoModal();
+    requestAnimationFrame(() => saveExtraPhoto(sectionKey, dataURL));
+  };
 }
 
 function toggleBuzaiInput() {
@@ -5377,6 +5380,11 @@ function toggleBuzaiInput() {
 function closeExtraPhotoModal() {
   const m = document.getElementById('extra-photo-modal');
   if (m) m.remove();
+}
+
+function hideExtraPhotoModal() {
+  const m = document.getElementById('extra-photo-modal');
+  if (m) m.style.display = 'none';
 }
 
 function saveExtraPhoto(sectionKey, dataURL) {
