@@ -5326,7 +5326,7 @@ function openExtraPhotoModal(sectionKey, dataURL) {
     </div>
     <div class="epm-field">
       <label class="epm-label">要素番号（任意）</label>
-      <input id="epm-element-no" type="number" class="epm-input" placeholder="例: 1">
+      <input id="epm-element-no" type="text" class="epm-input" placeholder="例: 0101 または 0101〜0201">
     </div>
     <div class="epm-field">
       <label class="epm-label">損傷の種類</label>
@@ -5420,7 +5420,7 @@ function saveExtraPhoto(sectionKey, dataURL) {
         // ラベル文字列を生成（追加番号・部材名＋要素番号・損傷種類・等級）
         const addNo        = state.extraPhotos.length; // push後なので件数＝現在の番号
         const buzaiLabel   = info.buzai  || '';
-        const elemNo       = info.elemNo ? String(info.elemNo).padStart(4, '0') : '';
+        const elemNo       = info.elemNo ? String(info.elemNo) : '';
         const memberLabel  = elemNo ? `${buzaiLabel}${elemNo}` : buzaiLabel;
         const sonsyouLabel = info.sonsyou || '';
         const gradeLabel   = info.grade ? `\uff0d${info.grade}` : '';
