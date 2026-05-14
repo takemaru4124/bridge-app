@@ -35,6 +35,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 })();
 
+// ===== APP VERSION =====
+// v1.0.2（2026-05-14）損傷追加機能（引き出し線＋カメラ＋ラベル表示）
+
 // ===== STATE =====
 const state = {
   mode: null,        // 'survey' | 'inspect'
@@ -1318,6 +1321,8 @@ function buildToolbarHTML(drawKey, pageNum) {
         <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
         <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
         <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${pageNum})">💾 保存</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="draw-tool-btn damage-add-btn" id="tool-damageadd-${drawKey}" onclick="setDamageAddMode('${drawKey}')">＋ 損傷追加</button>
       </div>
     </div>`;
 }
@@ -2562,6 +2567,15 @@ function setupDrawEvents(canvas, svg, key) {
       hideSnapIndicator(key);
       clearPreviewLine(key);
       renderSVGObjects(key);
+      // 損傷追加モード中なら引き出し線確定後に撮影ボタンを表示
+      const wasDamageAdd = ds.damageAddMode;
+      if (wasDamageAdd && dist > 0.01) {
+        ds.damageAddMode = false;
+        const btn = document.getElementById(`tool-damageadd-${key}`);
+        if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
+        setTool('scroll', key);
+        showDamageCameraPrompt(key);
+      }
 
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
@@ -2799,6 +2813,28 @@ function renderSVGObjects(key, _retry = 0) {
         arr.setAttribute('stroke', strokeColor); arr.setAttribute('stroke-width', sw);
         arr.setAttribute('fill','none'); arr.setAttribute('stroke-linecap','round');
         g.appendChild(arr);
+
+        // 損傷追加ラベルを引き出し線の始点付近に表示
+        if (obj.label) {
+          const fontSize = Math.max(W * 0.013, 10);
+          const lines = obj.label.split('　');
+          // 始点側（x1,y1）の近くにテキストを配置
+          // 線の角度に応じてテキストをオフセット
+          const offX = x1 < x2 ? -4 : 4;
+          const anchor = x1 < x2 ? 'end' : 'start';
+          lines.forEach((line, i) => {
+            const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+            txt.setAttribute('x', x1 + offX);
+            txt.setAttribute('y', y1 - fontSize * (lines.length - 1 - i) - 3);
+            txt.setAttribute('font-size', fontSize);
+            txt.setAttribute('font-family', 'sans-serif');
+            txt.setAttribute('fill', obj.color);
+            txt.setAttribute('text-anchor', anchor);
+            txt.setAttribute('pointer-events', 'none');
+            txt.textContent = line;
+            g.appendChild(txt);
+          });
+        }
       }
 
       // ヒットエリア（非選択時のみ有効）
@@ -3170,6 +3206,12 @@ function setTool(tool, key) {
   if (!ds) return;
   ds.tool = tool;
   ds.selectedId = null;
+  // 損傷追加モード中に別ツールを選んだら解除
+  if (ds.damageAddMode && tool !== 'arrow') {
+    ds.damageAddMode = false;
+    const btn = document.getElementById(`tool-damageadd-${key}`);
+    if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
+  }
   ['pen','line','arrow','rect','square','ellipse','select','eraser','scroll'].forEach(t => {
     const btn = document.getElementById(`tool-${t}-${key}`);
     if (btn) btn.classList.toggle('active', t === tool);
@@ -3187,6 +3229,64 @@ function setTool(tool, key) {
                         : 'crosshair';
   }
   renderSVGObjects(key);
+}
+
+// ===== 損傷追加モード =====
+function setDamageAddMode(key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  // すでに損傷追加モード中なら解除してscrollに戻す
+  if (ds.damageAddMode) {
+    ds.damageAddMode = false;
+    const btn = document.getElementById(`tool-damageadd-${key}`);
+    if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
+    setTool('scroll', key);
+    return;
+  }
+  ds.damageAddMode = true;
+  const btn = document.getElementById(`tool-damageadd-${key}`);
+  if (btn) { btn.classList.add('active'); btn.textContent = '✏️ 損傷追加中...'; }
+  setTool('arrow', key);
+  showToast('📍 図面上に引き出し線を描いてください', 'info');
+}
+
+// 引き出し線確定後に撮影促進バナーを表示（iOSはtouchendから直接input.clickできないため）
+let _damageAddDrawKey = null; // 損傷追加で描いた引き出し線のdrawKey
+
+function showDamageCameraPrompt(drawKey) {
+  _damageAddDrawKey = drawKey;
+  const existing = document.getElementById('damage-camera-prompt');
+  if (existing) existing.remove();
+
+  const prompt = document.createElement('div');
+  prompt.id = 'damage-camera-prompt';
+  prompt.style.cssText = `
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    z-index:8000; background:#22c55e; color:#fff;
+    border-radius:16px; padding:14px 28px;
+    font-size:17px; font-weight:700;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    display:flex; align-items:center; gap:12px;
+    white-space:nowrap;
+  `;
+  prompt.innerHTML = `
+    <span>📷 引き出し線を描きました</span>
+    <button onclick="startExtraPhoto('s10'); document.getElementById('damage-camera-prompt').remove();"
+      style="background:#fff;color:#22c55e;border:none;border-radius:10px;padding:8px 18px;font-size:15px;font-weight:700;cursor:pointer;">
+      撮影する
+    </button>
+    <button onclick="document.getElementById('damage-camera-prompt').remove();"
+      style="background:rgba(255,255,255,0.25);color:#fff;border:none;border-radius:10px;padding:8px 12px;font-size:15px;cursor:pointer;">
+      ✕
+    </button>
+  `;
+  document.body.appendChild(prompt);
+
+  // 10秒後に自動消去
+  setTimeout(() => {
+    const el = document.getElementById('damage-camera-prompt');
+    if (el) el.remove();
+  }, 10000);
 }
 
 // 長方形/正方形をトグル
@@ -5142,7 +5242,7 @@ const SONSYOU_LIST = [
   '⑬遊間の異常','⑭路面の凹凸','⑮舗装の異常','⑯支承部の機能障害','⑰その他',
   '⑱定着部の異常','⑲変色・劣化','⑳漏水・滞水',
   '㉑異常な音・振動','㉒異常なたわみ','㉓変形・欠損','㉔土砂詰まり',
-  '㉕沈下・移動・傾斜','㉖洗掘',
+  '㉕沈下・移動・傾斜','㉖洗掘','NON',
 ];
 
 // その３ 撮影種別
@@ -5178,6 +5278,10 @@ function startExtraPhoto(sectionKey) {
 function openExtraPhotoModal(sectionKey, dataURL) {
   const existing = document.getElementById('extra-photo-modal');
   if (existing) existing.remove();
+
+  // 撮影促進バナーが残っていれば消去
+  const promptEl = document.getElementById('damage-camera-prompt');
+  if (promptEl) promptEl.remove();
 
   const isS3 = sectionKey === 's3';
 
@@ -5222,12 +5326,23 @@ function openExtraPhotoModal(sectionKey, dataURL) {
     </div>
     <div class="epm-field">
       <label class="epm-label">要素番号（任意）</label>
-      <input id="epm-element-no" type="number" class="epm-input" placeholder="例: 1">
+      <input id="epm-element-no" type="text" class="epm-input" placeholder="例: 0101 または 0101〜0201">
     </div>
     <div class="epm-field">
       <label class="epm-label">損傷の種類</label>
       <select id="epm-sonsyou" class="epm-select">
         ${SONSYOU_LIST.map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="epm-field">
+      <label class="epm-label">損傷程度</label>
+      <select id="epm-grade" class="epm-select">
+        <option value="">-</option>
+        <option value="a">a</option>
+        <option value="b">b</option>
+        <option value="c">c</option>
+        <option value="d">d</option>
+        <option value="e">e</option>
       </select>
     </div>`;
 
@@ -5250,7 +5365,10 @@ function openExtraPhotoModal(sectionKey, dataURL) {
   modal._dataURL = dataURL;
   modal._sectionKey = sectionKey;
   document.body.appendChild(modal);
-  modal.querySelector('button[data-save]').onclick = () => saveExtraPhoto(sectionKey, dataURL);
+  modal.querySelector('button[data-save]').onclick = () => {
+    hideExtraPhotoModal();
+    requestAnimationFrame(() => saveExtraPhoto(sectionKey, dataURL));
+  };
 }
 
 function toggleBuzaiInput() {
@@ -5262,6 +5380,11 @@ function toggleBuzaiInput() {
 function closeExtraPhotoModal() {
   const m = document.getElementById('extra-photo-modal');
   if (m) m.remove();
+}
+
+function hideExtraPhotoModal() {
+  const m = document.getElementById('extra-photo-modal');
+  if (m) m.style.display = 'none';
 }
 
 function saveExtraPhoto(sectionKey, dataURL) {
@@ -5278,19 +5401,47 @@ function saveExtraPhoto(sectionKey, dataURL) {
     const buzai   = document.getElementById('epm-buzai-s10')?.value || '';
     const elemNo  = document.getElementById('epm-element-no')?.value || '';
     const sonsyou = document.getElementById('epm-sonsyou')?.value || '';
-    info = { buzai, elemNo, sonsyou, memo, span };
+    const grade   = document.getElementById('epm-grade')?.value || '';
+    info = { buzai, elemNo, sonsyou, grade, memo, span };
   }
 
   const id = 'extra_' + Date.now();
   if (!state.extraPhotos) state.extraPhotos = [];
   state.extraPhotos.push({ id, sectionKey, dataURL, info });
 
-  closeExtraPhotoModal();
-  // s9s10からの追加もs10グリッドに表示
-  renderExtraPhotoGrid(sectionKey);
-  if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
-  if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
-  showToast('✅ 写真を追加しました', 'success');
+  // 損傷追加モード経由の場合、引き出し線にラベルを付与してSVG再描画
+  if (!isS3 && _damageAddDrawKey) {
+    const ds = drawState[_damageAddDrawKey];
+    if (ds) {
+      // 最後に追加されたarrowオブジェクトを取得
+      const arrows = ds.objects.filter(o => o.type === 'arrow');
+      const lastArrow = arrows[arrows.length - 1];
+      if (lastArrow) {
+        // ラベル文字列を生成（追加番号・部材名＋要素番号・損傷種類・等級）
+        const addNo        = state.extraPhotos.length; // push後なので件数＝現在の番号
+        const buzaiLabel   = info.buzai  || '';
+        const elemNo       = info.elemNo ? String(info.elemNo) : '';
+        const memberLabel  = elemNo ? `${buzaiLabel}${elemNo}` : buzaiLabel;
+        const sonsyouLabel = info.sonsyou || '';
+        const gradeLabel   = info.grade ? `\uff0d${info.grade}` : '';
+        lastArrow.label = `\u8ffd\u52a0${addNo}\u3000${memberLabel}\u3000${sonsyouLabel}${gradeLabel}`.trim();
+        // モーダルを先に閉じてからSVG再描画（体感速度改善）
+        const drawKeySnap = _damageAddDrawKey;
+        _damageAddDrawKey = null;
+        // バナーが残っていれば確実に消去
+        const prompt = document.getElementById('damage-camera-prompt');
+        if (prompt) prompt.remove();
+        closeExtraPhotoModal();
+        renderExtraPhotoGrid(sectionKey);
+        if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
+        if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
+        showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
+        requestAnimationFrame(() => renderSVGObjects(drawKeySnap));
+        return;
+      }
+    }
+    _damageAddDrawKey = null;
+  }
 }
 
 // 追加写真グリッドを描画
@@ -5314,11 +5465,21 @@ function renderExtraPhotoGrid(sectionKey) {
     grid.innerHTML = msg;
     return;
   }
-  grid.innerHTML = photos.map(p => {
+  grid.innerHTML = photos.map((p, i) => {
     const isS3   = p.sectionKey === 's3';
-    const label  = isS3
-      ? (p.info.type === '部材記号' ? `部材記号: ${p.info.buzai}` : p.info.type)
-      : `${p.info.buzai} No.${p.info.elemNo || '-'} ${p.info.sonsyou}`;
+    // 連番：全追加写真プール内でのインデックス+1
+    const allIdx = (state.extraPhotos || []).findIndex(x => x.id === p.id);
+    const seqNo  = allIdx >= 0 ? allIdx + 1 : i + 1;
+    let label;
+    if (isS3) {
+      label = p.info.type === '部材記号' ? `追加${seqNo} 部材記号:${p.info.buzai}` : `追加${seqNo} ${p.info.type}`;
+    } else {
+      const buzai   = (p.info.buzai || '').replace(/\s/g, '');
+      const elemNo  = p.info.elemNo ? p.info.elemNo : '';
+      const sonsyou = p.info.sonsyou || '';
+      const grade   = p.info.grade   ? `-${p.info.grade}` : '';
+      label = `追加${seqNo} ${buzai}${elemNo} ${sonsyou}${grade}`.trim();
+    }
     const spanBadge = `<span style="background:var(--accent,#3b82f6);color:#fff;font-size:9px;font-weight:700;border-radius:6px;padding:1px 5px;margin-left:4px;">${p.info?.span || 1}径間</span>`;
     const memo   = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
     return `
@@ -5469,6 +5630,17 @@ function openExtraPhotoLightbox(id) {
       -webkit-appearance:none;
     }
     .epm-select { cursor:pointer; }
+
+    /* 損傷追加ボタン */
+    .damage-add-btn {
+      background: var(--green, #22c55e) !important;
+      color: #fff !important;
+      font-weight: 700 !important;
+    }
+    .damage-add-btn.active {
+      background: #f59e0b !important;
+      color: #fff !important;
+    }
   `;
   document.head.appendChild(style);
 })();
