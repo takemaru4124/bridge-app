@@ -5421,40 +5421,37 @@ function saveExtraPhoto(sectionKey, dataURL) {
   if (!state.extraPhotos) state.extraPhotos = [];
   state.extraPhotos.push({ id, sectionKey, dataURL, info });
 
-  // 損傷追加モード経由の場合、引き出し線にラベルを付与してSVG再描画
+  // 損傷追加モード経由の場合、引き出し線にラベルを付与
   if (!isS3 && _damageAddDrawKey) {
-    const ds = drawState[_damageAddDrawKey];
-    if (ds) {
-      // 最後に追加されたarrowオブジェクトを取得
-      const arrows = ds.objects.filter(o => o.type === 'arrow');
+    const drawDs = drawState[_damageAddDrawKey];
+    if (drawDs) {
+      const arrows = drawDs.objects.filter(o => o.type === 'arrow');
       const lastArrow = arrows[arrows.length - 1];
       if (lastArrow) {
-        // ラベル文字列を生成（追加番号・部材名＋要素番号・損傷種類・等級）
-        const addNo        = state.extraPhotos.length; // push後なので件数＝現在の番号
+        const addNo        = state.extraPhotos.length;
         const buzaiLabel   = info.buzai  || '';
         const elemNo       = info.elemNo ? String(info.elemNo) : '';
         const memberLabel  = elemNo ? `${buzaiLabel}${elemNo}` : buzaiLabel;
         const sonsyouLabel = info.sonsyou || '';
         const gradeLabel   = info.grade ? `\uff0d${info.grade}` : '';
         lastArrow.label = `\u8ffd\u52a0${addNo}\u3000${memberLabel}\u3000${sonsyouLabel}${gradeLabel}`.trim();
-        // モーダルを先に閉じてからSVG再描画（体感速度改善）
         const drawKeySnap = _damageAddDrawKey;
-        _damageAddDrawKey = null;
-        // バナーが残っていれば確実に消去
-        const prompt = document.getElementById('damage-camera-prompt');
-        if (prompt) prompt.remove();
-        closeExtraPhotoModal();
-        renderExtraPhotoGrid(sectionKey);
-        if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
-        if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
-        showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
-        requestAnimationFrame(() => renderSVGObjects(drawKeySnap));
-        return;
+        setTimeout(() => renderSVGObjects(drawKeySnap), 100);
       }
     }
     _damageAddDrawKey = null;
   }
-}
+
+  // バナーが残っていれば消去
+  const prompt = document.getElementById('damage-camera-prompt');
+  if (prompt) prompt.remove();
+
+  // モーダルを閉じてグリッド更新・トースト（共通）
+  closeExtraPhotoModal();
+  renderExtraPhotoGrid(sectionKey);
+  if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
+  if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
+  showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
 
 // 追加写真グリッドを描画
 function renderExtraPhotoGrid(sectionKey) {
