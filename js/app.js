@@ -5279,6 +5279,10 @@ function openExtraPhotoModal(sectionKey, dataURL) {
   const existing = document.getElementById('extra-photo-modal');
   if (existing) existing.remove();
 
+  // 撮影促進バナーが残っていれば消去
+  const promptEl = document.getElementById('damage-camera-prompt');
+  if (promptEl) promptEl.remove();
+
   const isS3 = sectionKey === 's3';
 
   // 径間リストを取得
@@ -5417,6 +5421,10 @@ function saveExtraPhoto(sectionKey, dataURL) {
     }
     _damageAddDrawKey = null;
   }
+
+  // バナーが残っていれば確実に消去
+  const prompt = document.getElementById('damage-camera-prompt');
+  if (prompt) prompt.remove();
 
   closeExtraPhotoModal();
   // s9s10からの追加もs10グリッドに表示
