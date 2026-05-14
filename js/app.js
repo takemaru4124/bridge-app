@@ -4560,6 +4560,8 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
       if (Array.isArray(list) && list.length > 1) {
         setSlotPhotoIndex(slot.key, list.length - 1);
       }
+      // 径間タブのフィルター状態を維持（全書き直し後に再適用）
+      applyPhotoFilter(sectionKey);
     }
     updatePhotoProgress();
     const missing = slots.filter(s => s.required && !state.photos[s.key]);
@@ -5140,7 +5142,7 @@ const SONSYOU_LIST = [
   '⑬遊間の異常','⑭路面の凹凸','⑮舗装の異常','⑯支承部の機能障害','⑰その他',
   '⑱定着部の異常','⑲変色・劣化','⑳漏水・滞水',
   '㉑異常な音・振動','㉒異常なたわみ','㉓変形・欠損','㉔土砂詰まり',
-  '㉕沈下・移動・傾斜','㉖洗掘',
+  '㉕沈下・移動・傾斜','㉖洗掘','NON',
 ];
 
 // その３ 撮影種別
@@ -5227,6 +5229,17 @@ function openExtraPhotoModal(sectionKey, dataURL) {
       <select id="epm-sonsyou" class="epm-select">
         ${SONSYOU_LIST.map(s => `<option value="${s}">${s}</option>`).join('')}
       </select>
+    </div>
+    <div class="epm-field">
+      <label class="epm-label">損傷程度</label>
+      <select id="epm-grade" class="epm-select">
+        <option value="">-</option>
+        <option value="a">a</option>
+        <option value="b">b</option>
+        <option value="c">c</option>
+        <option value="d">d</option>
+        <option value="e">e</option>
+      </select>
     </div>`;
 
   modal.innerHTML = `
@@ -5276,7 +5289,8 @@ function saveExtraPhoto(sectionKey, dataURL) {
     const buzai   = document.getElementById('epm-buzai-s10')?.value || '';
     const elemNo  = document.getElementById('epm-element-no')?.value || '';
     const sonsyou = document.getElementById('epm-sonsyou')?.value || '';
-    info = { buzai, elemNo, sonsyou, memo, span };
+    const grade   = document.getElementById('epm-grade')?.value || '';
+    info = { buzai, elemNo, sonsyou, grade, memo, span };
   }
 
   const id = 'extra_' + Date.now();
@@ -5312,11 +5326,21 @@ function renderExtraPhotoGrid(sectionKey) {
     grid.innerHTML = msg;
     return;
   }
-  grid.innerHTML = photos.map(p => {
+  grid.innerHTML = photos.map((p, i) => {
     const isS3   = p.sectionKey === 's3';
-    const label  = isS3
-      ? (p.info.type === '部材記号' ? `部材記号: ${p.info.buzai}` : p.info.type)
-      : `${p.info.buzai} No.${p.info.elemNo || '-'} ${p.info.sonsyou}`;
+    // 連番：全追加写真プール内でのインデックス+1
+    const allIdx = (state.extraPhotos || []).findIndex(x => x.id === p.id);
+    const seqNo  = allIdx >= 0 ? allIdx + 1 : i + 1;
+    let label;
+    if (isS3) {
+      label = p.info.type === '部材記号' ? `追加${seqNo} 部材記号:${p.info.buzai}` : `追加${seqNo} ${p.info.type}`;
+    } else {
+      const buzai   = (p.info.buzai || '').replace(/\s/g, '');
+      const elemNo  = p.info.elemNo ? p.info.elemNo : '';
+      const sonsyou = p.info.sonsyou || '';
+      const grade   = p.info.grade   ? `-${p.info.grade}` : '';
+      label = `追加${seqNo} ${buzai}${elemNo} ${sonsyou}${grade}`.trim();
+    }
     const spanBadge = `<span style="background:var(--accent,#3b82f6);color:#fff;font-size:9px;font-weight:700;border-radius:6px;padding:1px 5px;margin-left:4px;">${p.info?.span || 1}径間</span>`;
     const memo   = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
     return `
