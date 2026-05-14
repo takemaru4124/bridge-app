@@ -124,12 +124,22 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
     let pageSpan = 1;
     for (let i = 0; i < items.length; i++) {
       if (items[i].str.replace(/\s/g, '') === '径間番号' && items[i].y / H < 0.15) {
-        for (let j = i + 1; j < Math.min(i + 5, items.length); j++) {
-          if (/^\d+$/.test(items[j].str) && parseInt(items[j].str) > 0) {
-            pageSpan = parseInt(items[j].str);
-            break;
+        const spanLabelX = items[i].x;
+        const spanLabelY = items[i].y;
+        // 同じy座標付近（y差5%以内）かつ右側にある最も近い数字を採用
+        let bestX = 9999, bestVal = null;
+        for (let j = 0; j < items.length; j++) {
+          if (j === i) continue;
+          const nxt = items[j];
+          if (!/^\d+$/.test(nxt.str) || parseInt(nxt.str) <= 0) continue;
+          if (Math.abs(nxt.y - spanLabelY) / H > 0.05) continue;
+          const xDist = nxt.x - spanLabelX;
+          if (xDist > 0 && xDist < bestX) {
+            bestX = xDist;
+            bestVal = parseInt(nxt.str);
           }
         }
+        if (bestVal !== null) pageSpan = bestVal;
         break;
       }
     }
@@ -267,12 +277,22 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
     let pageSpan = 1;
     for (let i = 0; i < items.length; i++) {
       if (items[i].str.replace(/\s/g, '') === '径間番号' && items[i].y / H < 0.15) {
-        for (let j = i + 1; j < Math.min(i + 5, items.length); j++) {
-          if (/^\d+$/.test(items[j].str) && parseInt(items[j].str) > 0) {
-            pageSpan = parseInt(items[j].str);
-            break;
+        const spanLabelX = items[i].x;
+        const spanLabelY = items[i].y;
+        // 同じy座標付近（y差5%以内）かつ右側にある最も近い数字を採用
+        let bestX = 9999, bestVal = null;
+        for (let j = 0; j < items.length; j++) {
+          if (j === i) continue;
+          const nxt = items[j];
+          if (!/^\d+$/.test(nxt.str) || parseInt(nxt.str) <= 0) continue;
+          if (Math.abs(nxt.y - spanLabelY) / H > 0.05) continue;
+          const xDist = nxt.x - spanLabelX;
+          if (xDist > 0 && xDist < bestX) {
+            bestX = xDist;
+            bestVal = parseInt(nxt.str);
           }
         }
+        if (bestVal !== null) pageSpan = bestVal;
         break;
       }
     }
