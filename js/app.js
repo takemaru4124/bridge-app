@@ -5409,13 +5409,14 @@ function saveExtraPhoto(sectionKey, dataURL) {
       const arrows = ds.objects.filter(o => o.type === 'arrow');
       const lastArrow = arrows[arrows.length - 1];
       if (lastArrow) {
-        // ラベル文字列を生成（部材名＋要素番号・損傷種類・等級）
+        // ラベル文字列を生成（追加番号・部材名＋要素番号・損傷種類・等級）
+        const addNo        = state.extraPhotos.length; // push後なので件数＝現在の番号
         const buzaiLabel   = info.buzai  || '';
         const elemNo       = info.elemNo ? String(info.elemNo).padStart(4, '0') : '';
         const memberLabel  = elemNo ? `${buzaiLabel}${elemNo}` : buzaiLabel;
         const sonsyouLabel = info.sonsyou || '';
         const gradeLabel   = info.grade ? `\uff0d${info.grade}` : '';
-        lastArrow.label = `${memberLabel}\u3000${sonsyouLabel}${gradeLabel}`.trim();
+        lastArrow.label = `\u8ffd\u52a0${addNo}\u3000${memberLabel}\u3000${sonsyouLabel}${gradeLabel}`.trim();
         renderSVGObjects(_damageAddDrawKey);
       }
     }
