@@ -1090,25 +1090,27 @@ function popupCapturePhoto(addMode) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       if (!state.photos) state.photos = {};
-      const newEntry = { dataURL: ev.target.result, label: '' };
-      const existing = state.photos[_popupSlotKey];
-      if (addMode && Array.isArray(existing)) {
-        existing.push(newEntry);
-        _popupPhotoIdx = existing.length - 1;
-      } else if (addMode && existing) {
-        const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
-        state.photos[_popupSlotKey] = [prev, newEntry];
-        _popupPhotoIdx = 1;
-      } else {
-        state.photos[_popupSlotKey] = [newEntry];
-        _popupPhotoIdx = 0;
-      }
-      const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
-      const slot  = slots.find(s => s.key === _popupSlotKey);
-      if (slot) updatePopup(slot);
-      // グリッド側も更新
-      _refreshPhotoGrid(_popupSlotKey);
-      showToast('✅ 写真を保存しました', 'success');
+      compressImage(ev.target.result, 0.75, 1280).then(compressed => {
+        const newEntry = { dataURL: compressed, label: '' };
+        const existing = state.photos[_popupSlotKey];
+        if (addMode && Array.isArray(existing)) {
+          existing.push(newEntry);
+          _popupPhotoIdx = existing.length - 1;
+        } else if (addMode && existing) {
+          const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
+          state.photos[_popupSlotKey] = [prev, newEntry];
+          _popupPhotoIdx = 1;
+        } else {
+          state.photos[_popupSlotKey] = [newEntry];
+          _popupPhotoIdx = 0;
+        }
+        const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+        const slot  = slots.find(s => s.key === _popupSlotKey);
+        if (slot) updatePopup(slot);
+        // グリッド側も更新
+        _refreshPhotoGrid(_popupSlotKey);
+        showToast('✅ 写真を保存しました', 'success');
+      }); // compressImage end
     };
     reader.readAsDataURL(file);
     input.remove();
@@ -2275,8 +2277,6 @@ function setupDrawEvents(canvas, svg, key) {
       if (!ds.history) ds.history = [];
       ds.history.push({ type: 'pen', penData: canvas.toDataURL(), penStrokes: (ds.penStrokes||[]).map(s=>({...s,points:[...s.points]})) });
       if (ds.history.length > 30) ds.history.shift();
-      ds.penHistory.push(canvas.toDataURL());
-      if (ds.penHistory.length > 30) ds.penHistory.shift();
       // ストローク開始
       if (!ds.penStrokes) ds.penStrokes = [];
       ds._currentStroke = { id: Date.now(), color: ds.color, sizeMM: ds.sizeMM, points: [{nx:pos.nx, ny:pos.ny, x:pos.x, y:pos.y}] };
@@ -4515,8 +4515,9 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
     const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
     const slot = slots.find(s => s.key === slotKey) || { key: slotKey || `auto_${Date.now()}`, label: '撮影写真', required: false };
 
-    // 複数枚対応：配列で管理
-    const newEntry = { dataURL: ev.target.result, label: slot.label };
+    // 複数枚対応：配列で管理（圧縮してからメモリに保存）
+    compressImage(ev.target.result, 0.75, 1280).then(compressed => {
+    const newEntry = { dataURL: compressed, label: slot.label };
     const existing = state.photos[slot.key];
     if (addMode && Array.isArray(existing)) {
       existing.push(newEntry);
@@ -4551,6 +4552,7 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
         alert.querySelector('p').innerHTML = `必須写真が <strong>${missing.length}枚</strong> 未撮影です。<br>${missing.slice(0,3).map(s=>s.label).join('、')}${missing.length > 3 ? '...' : ''}`;
       }
     }
+    }); // compressImage end
   };
   reader.readAsDataURL(file);
 }
@@ -5139,7 +5141,9 @@ function startExtraPhoto(sectionKey) {
     if (!file) { input.remove(); return; }
     const reader = new FileReader();
     reader.onload = (ev) => {
-      openExtraPhotoModal(sectionKey, ev.target.result);
+      compressImage(ev.target.result, 0.75, 1280).then(compressed => {
+        openExtraPhotoModal(sectionKey, compressed);
+      });
     };
     reader.readAsDataURL(file);
     input.remove();
