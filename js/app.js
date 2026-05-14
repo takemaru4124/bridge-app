@@ -5452,6 +5452,7 @@ function saveExtraPhoto(sectionKey, dataURL) {
   if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
   if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
   showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
+}
 
 // 追加写真グリッドを描画
 function renderExtraPhotoGrid(sectionKey) {
