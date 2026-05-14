@@ -1318,6 +1318,8 @@ function buildToolbarHTML(drawKey, pageNum) {
         <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
         <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
         <button class="draw-save-btn" onclick="saveDraw('${drawKey}',${pageNum})">💾 保存</button>
+        <span class="draw-toolbar-sep"></span>
+        <button class="draw-tool-btn damage-add-btn" id="tool-damageadd-${drawKey}" onclick="setDamageAddMode('${drawKey}')">＋ 損傷追加</button>
       </div>
     </div>`;
 }
@@ -2562,6 +2564,15 @@ function setupDrawEvents(canvas, svg, key) {
       hideSnapIndicator(key);
       clearPreviewLine(key);
       renderSVGObjects(key);
+      // 損傷追加モード中なら引き出し線確定後にカメラ起動
+      if (ds.tool === 'arrow' && ds.damageAddMode && dist > 0.01) {
+        ds.damageAddMode = false;
+        const btn = document.getElementById(`tool-damageadd-${key}`);
+        if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
+        setTool('scroll', key);
+        // 少し遅延してカメラ起動（SVG描画完了を待つ）
+        setTimeout(() => startExtraPhoto('s10'), 300);
+      }
 
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
       const dist = Math.hypot(ex - ds.startX, ey - ds.startY);
@@ -3170,6 +3181,12 @@ function setTool(tool, key) {
   if (!ds) return;
   ds.tool = tool;
   ds.selectedId = null;
+  // 損傷追加モード中に別ツールを選んだら解除
+  if (ds.damageAddMode && tool !== 'arrow') {
+    ds.damageAddMode = false;
+    const btn = document.getElementById(`tool-damageadd-${key}`);
+    if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
+  }
   ['pen','line','arrow','rect','square','ellipse','select','eraser','scroll'].forEach(t => {
     const btn = document.getElementById(`tool-${t}-${key}`);
     if (btn) btn.classList.toggle('active', t === tool);
@@ -3187,6 +3204,25 @@ function setTool(tool, key) {
                         : 'crosshair';
   }
   renderSVGObjects(key);
+}
+
+// ===== 損傷追加モード =====
+function setDamageAddMode(key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  // すでに損傷追加モード中なら解除してscrollに戻す
+  if (ds.damageAddMode) {
+    ds.damageAddMode = false;
+    const btn = document.getElementById(`tool-damageadd-${key}`);
+    if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
+    setTool('scroll', key);
+    return;
+  }
+  ds.damageAddMode = true;
+  const btn = document.getElementById(`tool-damageadd-${key}`);
+  if (btn) { btn.classList.add('active'); btn.textContent = '✏️ 損傷追加中...'; }
+  setTool('arrow', key);
+  showToast('📍 図面上に引き出し線を描いてください', 'info');
 }
 
 // 長方形/正方形をトグル
@@ -5491,6 +5527,17 @@ function openExtraPhotoLightbox(id) {
       -webkit-appearance:none;
     }
     .epm-select { cursor:pointer; }
+
+    /* 損傷追加ボタン */
+    .damage-add-btn {
+      background: var(--green, #22c55e) !important;
+      color: #fff !important;
+      font-weight: 700 !important;
+    }
+    .damage-add-btn.active {
+      background: #f59e0b !important;
+      color: #fff !important;
+    }
   `;
   document.head.appendChild(style);
 })();
