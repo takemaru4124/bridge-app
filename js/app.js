@@ -5366,6 +5366,15 @@ function openExtraPhotoModal(sectionKey, dataURL) {
   modal._sectionKey = sectionKey;
   document.body.appendChild(modal);
   modal.querySelector('button[data-save]').onclick = () => {
+    // フォーム値をモーダル非表示前に取得してdata属性に退避
+    modal.dataset.span    = document.getElementById('epm-span')?.value || '1';
+    modal.dataset.memo    = document.getElementById('epm-memo')?.value || '';
+    modal.dataset.buzai   = document.getElementById('epm-buzai-s10')?.value || '';
+    modal.dataset.elemNo  = document.getElementById('epm-element-no')?.value || '';
+    modal.dataset.sonsyou = document.getElementById('epm-sonsyou')?.value || '';
+    modal.dataset.grade   = document.getElementById('epm-grade')?.value || '';
+    modal.dataset.s3type  = document.getElementById('epm-s3-type')?.value || '';
+    modal.dataset.s3buzai = document.getElementById('epm-buzai')?.value || '';
     hideExtraPhotoModal();
     requestAnimationFrame(() => saveExtraPhoto(sectionKey, dataURL));
   };
@@ -5390,18 +5399,21 @@ function hideExtraPhotoModal() {
 function saveExtraPhoto(sectionKey, dataURL) {
   const isS3 = sectionKey === 's3';
   let info = {};
-  const memo  = document.getElementById('epm-memo')?.value || '';
-  const span  = parseInt(document.getElementById('epm-span')?.value || '1') || 1;
+  const modal = document.getElementById('extra-photo-modal');
+  // dataset退避値を優先、なければDOMから直接取得
+  const ds = modal?.dataset;
+  const memo  = ds?.memo  ?? document.getElementById('epm-memo')?.value  ?? '';
+  const span  = parseInt(ds?.span  ?? document.getElementById('epm-span')?.value  ?? '1') || 1;
 
   if (isS3) {
-    const type  = document.getElementById('epm-s3-type')?.value || '';
-    const buzai = type === '部材記号' ? (document.getElementById('epm-buzai')?.value || '') : '';
+    const type  = ds?.s3type  ?? document.getElementById('epm-s3-type')?.value  ?? '';
+    const buzai = type === '部材記号' ? (ds?.s3buzai ?? document.getElementById('epm-buzai')?.value ?? '') : '';
     info = { type, buzai, memo, span };
   } else {
-    const buzai   = document.getElementById('epm-buzai-s10')?.value || '';
-    const elemNo  = document.getElementById('epm-element-no')?.value || '';
-    const sonsyou = document.getElementById('epm-sonsyou')?.value || '';
-    const grade   = document.getElementById('epm-grade')?.value || '';
+    const buzai   = ds?.buzai   ?? document.getElementById('epm-buzai-s10')?.value  ?? '';
+    const elemNo  = ds?.elemNo  ?? document.getElementById('epm-element-no')?.value ?? '';
+    const sonsyou = ds?.sonsyou ?? document.getElementById('epm-sonsyou')?.value    ?? '';
+    const grade   = ds?.grade   ?? document.getElementById('epm-grade')?.value      ?? '';
     info = { buzai, elemNo, sonsyou, grade, memo, span };
   }
 
