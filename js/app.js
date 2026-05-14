@@ -5376,7 +5376,7 @@ function openExtraPhotoModal(sectionKey, dataURL) {
     modal.dataset.s3type  = document.getElementById('epm-s3-type')?.value || '';
     modal.dataset.s3buzai = document.getElementById('epm-buzai')?.value || '';
     hideExtraPhotoModal();
-    requestAnimationFrame(() => saveExtraPhoto(sectionKey, dataURL));
+    saveExtraPhoto(sectionKey, dataURL);
   };
 }
 
