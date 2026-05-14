@@ -2564,16 +2564,14 @@ function setupDrawEvents(canvas, svg, key) {
       hideSnapIndicator(key);
       clearPreviewLine(key);
       renderSVGObjects(key);
-      // 損傷追加モード中なら引き出し線確定後にカメラ起動
-      // ※ setToolを呼ぶとds.toolが変わるため、フラグを先に退避してから処理する
+      // 損傷追加モード中なら引き出し線確定後に撮影ボタンを表示
       const wasDamageAdd = ds.damageAddMode;
-      showToast(`DEBUG: tool=${ds.tool} damageAdd=${ds.damageAddMode} dist=${dist.toFixed(3)}`, 'info');
       if (wasDamageAdd && dist > 0.01) {
         ds.damageAddMode = false;
         const btn = document.getElementById(`tool-damageadd-${key}`);
         if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
         setTool('scroll', key);
-        setTimeout(() => startExtraPhoto('s10'), 300);
+        showDamageCameraPrompt();
       }
 
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
@@ -3225,6 +3223,42 @@ function setDamageAddMode(key) {
   if (btn) { btn.classList.add('active'); btn.textContent = '✏️ 損傷追加中...'; }
   setTool('arrow', key);
   showToast('📍 図面上に引き出し線を描いてください', 'info');
+}
+
+// 引き出し線確定後に撮影促進バナーを表示（iOSはtouchendから直接input.clickできないため）
+function showDamageCameraPrompt() {
+  const existing = document.getElementById('damage-camera-prompt');
+  if (existing) existing.remove();
+
+  const prompt = document.createElement('div');
+  prompt.id = 'damage-camera-prompt';
+  prompt.style.cssText = `
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    z-index:8000; background:#22c55e; color:#fff;
+    border-radius:16px; padding:14px 28px;
+    font-size:17px; font-weight:700;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    display:flex; align-items:center; gap:12px;
+    white-space:nowrap;
+  `;
+  prompt.innerHTML = `
+    <span>📷 引き出し線を描きました</span>
+    <button onclick="startExtraPhoto('s10'); document.getElementById('damage-camera-prompt').remove();"
+      style="background:#fff;color:#22c55e;border:none;border-radius:10px;padding:8px 18px;font-size:15px;font-weight:700;cursor:pointer;">
+      撮影する
+    </button>
+    <button onclick="document.getElementById('damage-camera-prompt').remove();"
+      style="background:rgba(255,255,255,0.25);color:#fff;border:none;border-radius:10px;padding:8px 12px;font-size:15px;cursor:pointer;">
+      ✕
+    </button>
+  `;
+  document.body.appendChild(prompt);
+
+  // 10秒後に自動消去
+  setTimeout(() => {
+    const el = document.getElementById('damage-camera-prompt');
+    if (el) el.remove();
+  }, 10000);
 }
 
 // 長方形/正方形をトグル
