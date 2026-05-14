@@ -35,6 +35,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 })();
 
+// ===== APP VERSION =====
+// v1.0.2（2026-05-14）損傷追加機能（引き出し線＋カメラ＋ラベル表示）
+
 // ===== STATE =====
 const state = {
   mode: null,        // 'survey' | 'inspect'
@@ -2571,7 +2574,7 @@ function setupDrawEvents(canvas, svg, key) {
         const btn = document.getElementById(`tool-damageadd-${key}`);
         if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
         setTool('scroll', key);
-        showDamageCameraPrompt();
+        showDamageCameraPrompt(key);
       }
 
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
@@ -2810,6 +2813,28 @@ function renderSVGObjects(key, _retry = 0) {
         arr.setAttribute('stroke', strokeColor); arr.setAttribute('stroke-width', sw);
         arr.setAttribute('fill','none'); arr.setAttribute('stroke-linecap','round');
         g.appendChild(arr);
+
+        // 損傷追加ラベルを引き出し線の始点付近に表示
+        if (obj.label) {
+          const fontSize = Math.max(W * 0.013, 10);
+          const lines = obj.label.split('　');
+          // 始点側（x1,y1）の近くにテキストを配置
+          // 線の角度に応じてテキストをオフセット
+          const offX = x1 < x2 ? -4 : 4;
+          const anchor = x1 < x2 ? 'end' : 'start';
+          lines.forEach((line, i) => {
+            const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+            txt.setAttribute('x', x1 + offX);
+            txt.setAttribute('y', y1 - fontSize * (lines.length - 1 - i) - 3);
+            txt.setAttribute('font-size', fontSize);
+            txt.setAttribute('font-family', 'sans-serif');
+            txt.setAttribute('fill', obj.color);
+            txt.setAttribute('text-anchor', anchor);
+            txt.setAttribute('pointer-events', 'none');
+            txt.textContent = line;
+            g.appendChild(txt);
+          });
+        }
       }
 
       // ヒットエリア（非選択時のみ有効）
@@ -3226,7 +3251,10 @@ function setDamageAddMode(key) {
 }
 
 // 引き出し線確定後に撮影促進バナーを表示（iOSはtouchendから直接input.clickできないため）
-function showDamageCameraPrompt() {
+let _damageAddDrawKey = null; // 損傷追加で描いた引き出し線のdrawKey
+
+function showDamageCameraPrompt(drawKey) {
+  _damageAddDrawKey = drawKey;
   const existing = document.getElementById('damage-camera-prompt');
   if (existing) existing.remove();
 
@@ -5368,6 +5396,27 @@ function saveExtraPhoto(sectionKey, dataURL) {
   const id = 'extra_' + Date.now();
   if (!state.extraPhotos) state.extraPhotos = [];
   state.extraPhotos.push({ id, sectionKey, dataURL, info });
+
+  // 損傷追加モード経由の場合、引き出し線にラベルを付与してSVG再描画
+  if (!isS3 && _damageAddDrawKey) {
+    const ds = drawState[_damageAddDrawKey];
+    if (ds) {
+      // 最後に追加されたarrowオブジェクトを取得
+      const arrows = ds.objects.filter(o => o.type === 'arrow');
+      const lastArrow = arrows[arrows.length - 1];
+      if (lastArrow) {
+        // ラベル文字列を生成（部材名＋要素番号・損傷種類・等級）
+        const buzaiLabel   = info.buzai  || '';
+        const elemNo       = info.elemNo ? String(info.elemNo).padStart(4, '0') : '';
+        const memberLabel  = elemNo ? `${buzaiLabel}${elemNo}` : buzaiLabel;
+        const sonsyouLabel = info.sonsyou || '';
+        const gradeLabel   = info.grade ? `\uff0d${info.grade}` : '';
+        lastArrow.label = `${memberLabel}\u3000${sonsyouLabel}${gradeLabel}`.trim();
+        renderSVGObjects(_damageAddDrawKey);
+      }
+    }
+    _damageAddDrawKey = null;
+  }
 
   closeExtraPhotoModal();
   // s9s10からの追加もs10グリッドに表示
