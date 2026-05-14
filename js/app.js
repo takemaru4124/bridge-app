@@ -2565,12 +2565,13 @@ function setupDrawEvents(canvas, svg, key) {
       clearPreviewLine(key);
       renderSVGObjects(key);
       // 損傷追加モード中なら引き出し線確定後にカメラ起動
-      if (ds.tool === 'arrow' && ds.damageAddMode && dist > 0.01) {
+      // ※ setToolを呼ぶとds.toolが変わるため、フラグを先に退避してから処理する
+      const wasDamageAdd = ds.damageAddMode;
+      if (wasDamageAdd && dist > 0.01) {
         ds.damageAddMode = false;
         const btn = document.getElementById(`tool-damageadd-${key}`);
         if (btn) { btn.classList.remove('active'); btn.textContent = '＋ 損傷追加'; }
         setTool('scroll', key);
-        // 少し遅延してカメラ起動（SVG描画完了を待つ）
         setTimeout(() => startExtraPhoto('s10'), 300);
       }
 
