@@ -5245,6 +5245,10 @@ const SONSYOU_LIST = [
   '㉕沈下・移動・傾斜','㉖洗掘','NON',
 ];
 
+// セレクトボックスのオプションHTMLをキャッシュ（モーダル開くたびに生成しないよう）
+const _cachedBuzaiOptions    = BUZAI_LIST.map(b => `<option value="${b.split(':')[0]}">${b}</option>`).join('');
+const _cachedSonsyouOptions  = SONSYOU_LIST.map(s => `<option value="${s}">${s}</option>`).join('');
+
 // その３ 撮影種別
 const S3_TYPES = ['全景','正面','桁下','下部構造','部材記号'];
 
@@ -5313,7 +5317,7 @@ function openExtraPhotoModal(sectionKey, dataURL) {
     <div class="epm-field" id="epm-buzai-field" style="display:none;">
       <label class="epm-label">部材記号</label>
       <select id="epm-buzai" class="epm-select">
-        ${BUZAI_LIST.map(b => `<option value="${b.split(':')[0]}">${b}</option>`).join('')}
+        ${_cachedBuzaiOptions}
       </select>
     </div>`;
 
@@ -5321,7 +5325,7 @@ function openExtraPhotoModal(sectionKey, dataURL) {
     <div class="epm-field">
       <label class="epm-label">部材名</label>
       <select id="epm-buzai-s10" class="epm-select">
-        ${BUZAI_LIST.map(b => `<option value="${b.split(':')[0]}">${b}</option>`).join('')}
+        ${_cachedBuzaiOptions}
       </select>
     </div>
     <div class="epm-field">
@@ -5331,7 +5335,7 @@ function openExtraPhotoModal(sectionKey, dataURL) {
     <div class="epm-field">
       <label class="epm-label">損傷の種類</label>
       <select id="epm-sonsyou" class="epm-select">
-        ${SONSYOU_LIST.map(s => `<option value="${s}">${s}</option>`).join('')}
+        ${_cachedSonsyouOptions}
       </select>
     </div>
     <div class="epm-field">
