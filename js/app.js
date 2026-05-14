@@ -5448,14 +5448,14 @@ function saveExtraPhoto(sectionKey, dataURL) {
 
   // モーダルを閉じてグリッド更新・トースト（共通）
   closeExtraPhotoModal();
-  renderExtraPhotoGrid(sectionKey);
-  if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
-  if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
+  renderExtraPhotoGrid(sectionKey, true);
+  if (sectionKey === 's9s10') renderExtraPhotoGrid('s10', true);
+  if (sectionKey === 's10')   renderExtraPhotoGrid('s10', true);
   showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
 }
 
 // 追加写真グリッドを描画
-function renderExtraPhotoGrid(sectionKey) {
+function renderExtraPhotoGrid(sectionKey, appendOnly = false) {
   const grid = document.getElementById('extra-photo-grid-' + sectionKey);
   if (!grid) return;
   // s10とs9s10は同じ追加写真プール
@@ -5475,9 +5475,9 @@ function renderExtraPhotoGrid(sectionKey) {
     grid.innerHTML = msg;
     return;
   }
-  grid.innerHTML = photos.map((p, i) => {
+
+  const makeCard = (p, i) => {
     const isS3   = p.sectionKey === 's3';
-    // 連番：全追加写真プール内でのインデックス+1
     const allIdx = (state.extraPhotos || []).findIndex(x => x.id === p.id);
     const seqNo  = allIdx >= 0 ? allIdx + 1 : i + 1;
     let label;
@@ -5492,16 +5492,31 @@ function renderExtraPhotoGrid(sectionKey) {
     }
     const spanBadge = `<span style="background:var(--accent,#3b82f6);color:#fff;font-size:9px;font-weight:700;border-radius:6px;padding:1px 5px;margin-left:4px;">${p.info?.span || 1}径間</span>`;
     const memo   = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
-    return `
-      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;">
-        <img src="${p.dataURL}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;" onclick="openExtraPhotoLightbox('${p.id}')">
-        <button onclick="deleteExtraPhoto('${p.id}','${sectionKey}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;">✕</button>
-        <div style="padding:6px 8px;">
-          <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}</div>
-          ${memo}
-        </div>
+    const div = document.createElement('div');
+    div.dataset.photoId = p.id;
+    div.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;';
+    div.innerHTML = `
+      <img src="${p.dataURL}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;" onclick="openExtraPhotoLightbox('${p.id}')">
+      <button onclick="deleteExtraPhoto('${p.id}','${sectionKey}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;">✕</button>
+      <div style="padding:6px 8px;">
+        <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}</div>
+        ${memo}
       </div>`;
-  }).join('');
+    return div;
+  };
+
+  // appendOnly=trueの場合は最後の1件だけ追記（保存速度改善）
+  if (appendOnly && grid.querySelector('[data-photo-id]')) {
+    const lastPhoto = photos[photos.length - 1];
+    if (lastPhoto && !grid.querySelector(`[data-photo-id="${lastPhoto.id}"]`)) {
+      grid.appendChild(makeCard(lastPhoto, photos.length - 1));
+    }
+    return;
+  }
+
+  // 全件再描画
+  grid.innerHTML = '';
+  photos.forEach((p, i) => grid.appendChild(makeCard(p, i)));
 }
 
 function deleteExtraPhoto(id, sectionKey) {
