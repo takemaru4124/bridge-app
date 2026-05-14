@@ -5417,22 +5417,23 @@ function saveExtraPhoto(sectionKey, dataURL) {
         const sonsyouLabel = info.sonsyou || '';
         const gradeLabel   = info.grade ? `\uff0d${info.grade}` : '';
         lastArrow.label = `\u8ffd\u52a0${addNo}\u3000${memberLabel}\u3000${sonsyouLabel}${gradeLabel}`.trim();
-        renderSVGObjects(_damageAddDrawKey);
+        // モーダルを先に閉じてからSVG再描画（体感速度改善）
+        const drawKeySnap = _damageAddDrawKey;
+        _damageAddDrawKey = null;
+        // バナーが残っていれば確実に消去
+        const prompt = document.getElementById('damage-camera-prompt');
+        if (prompt) prompt.remove();
+        closeExtraPhotoModal();
+        renderExtraPhotoGrid(sectionKey);
+        if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
+        if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
+        showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
+        requestAnimationFrame(() => renderSVGObjects(drawKeySnap));
+        return;
       }
     }
     _damageAddDrawKey = null;
   }
-
-  // バナーが残っていれば確実に消去
-  const prompt = document.getElementById('damage-camera-prompt');
-  if (prompt) prompt.remove();
-
-  closeExtraPhotoModal();
-  // s9s10からの追加もs10グリッドに表示
-  renderExtraPhotoGrid(sectionKey);
-  if (sectionKey === 's9s10') renderExtraPhotoGrid('s10');
-  if (sectionKey === 's10')   renderExtraPhotoGrid('s10');
-  showToast('✅ 写真を追加しました', 'success');
 }
 
 // 追加写真グリッドを描画
