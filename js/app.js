@@ -39,7 +39,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 // v1.0.3（2026-05-15）スクロール位置修正・ツールバー長押しサイズ選択
 
 // ===== ツールバー長押しメニュー用CSS注入 =====
-(function injectToolbarCSS() {
+function injectToolbarCSS() {
   const style = document.createElement('style');
   style.textContent = `
     .tool-has-size { position: relative; padding-top: 16px !important; }
@@ -61,7 +61,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
   `;
   document.head.appendChild(style);
-})();
+}
+document.addEventListener('DOMContentLoaded', injectToolbarCSS);
 
 // ===== STATE =====
 const state = {
@@ -1124,14 +1125,7 @@ let _popupPhotoIdx = 0;
 
 function popupCapturePhoto(addMode) {
   if (!_popupSlotKey) return;
-
-  // TG-7モードがオンの場合はデジカメ待機へ
-  if (_tg7ModeOn) {
-    popupCapturePhotoTG7(addMode);
-    return;
-  }
-
-  // 通常：iPadカメラを起動（競合防止：新規input生成方式）
+  // 競合防止：新規input生成方式
   const old = document.getElementById('popup-camera-input-dyn');
   if (old) old.remove();
   const input = document.createElement('input');
@@ -4190,132 +4184,6 @@ let _sdSelectedPhotoURL = null;
 let _sdCurrentTab = 'tg7';        // 'tg7' | 'flashair'
 let _sdFromPopup  = false;        // ポップアップから呼ばれたか
 
-// ===== TG-7モード =====
-let _tg7ModeOn       = false;     // TG-7モードのオン/オフ
-let _tg7PollingTimer = null;      // ポーリングタイマー
-let _tg7KnownFiles   = new Set(); // 既知のファイル名セット
-let _tg7WaitingSlot  = null;      // 待機中のスロットキー
-let _tg7BaseURL      = 'http://192.168.0.10';
-
-function toggleTG7Mode() {
-  _tg7ModeOn = !_tg7ModeOn;
-  const btn = document.getElementById('tg7-mode-btn');
-  if (_tg7ModeOn) {
-    // 接続URLを確認してポーリング開始
-    _tg7BaseURL = (document.getElementById('sd-url-input')?.value || 'http://192.168.0.10').trim().replace(/\/$/, '');
-    btn.textContent = '📷 TG-7 ON';
-    btn.style.background = 'var(--accent)';
-    btn.style.border = 'none';
-    showToast('TG-7モード ON：撮影ボタンを押してデジカメで撮影してください', 'success');
-    _tg7StartPolling();
-  } else {
-    _tg7StopPolling();
-    btn.textContent = '📷 TG-7 OFF';
-    btn.style.background = 'rgba(255,255,255,0.15)';
-    btn.style.border = '1px solid rgba(255,255,255,0.4)';
-    _tg7WaitingSlot = null;
-    showToast('TG-7モード OFF', 'info');
-  }
-}
-
-// ポーリング開始：既存ファイルを記録してから新着監視
-async function _tg7StartPolling() {
-  // 既存ファイルを初期スキャンして既知セットに登録
-  try {
-    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
-    if (photos) photos.forEach(p => _tg7KnownFiles.add(p.name));
-  } catch(e) {}
-
-  _tg7PollingTimer = setInterval(_tg7Poll, 4000); // 4秒ごと
-}
-
-function _tg7StopPolling() {
-  if (_tg7PollingTimer) {
-    clearInterval(_tg7PollingTimer);
-    _tg7PollingTimer = null;
-  }
-}
-
-async function _tg7Poll() {
-  if (!_tg7ModeOn || !_tg7WaitingSlot) return;
-  try {
-    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
-    if (!photos) return;
-    const newPhotos = photos.filter(p => !_tg7KnownFiles.has(p.name));
-    if (newPhotos.length === 0) return;
-
-    // 最新の1枚を取り込み
-    const latest = newPhotos[newPhotos.length - 1];
-    _tg7KnownFiles.add(latest.name);
-    await _importSDPhotoToSlot(latest.url, latest.name, _tg7WaitingSlot);
-    _tg7WaitingSlot = null; // 待機解除
-  } catch(e) {}
-}
-
-// TG-7モード時の撮影ボタン処理
-function popupCapturePhotoTG7(addMode) {
-  if (!_popupSlotKey) return;
-  _tg7WaitingSlot = _popupSlotKey;
-
-  // ポップアップの「撮影エリア」に待機中UIを表示
-  const noneEl = document.getElementById('popup-current-none');
-  if (noneEl) {
-    noneEl.innerHTML = `
-      <div style="text-align:center;color:var(--accent);padding:20px;">
-        <div style="font-size:36px;margin-bottom:8px;">📷</div>
-        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">TG-7で撮影してください</div>
-        <div style="font-size:11px;color:var(--text2);">撮影後、自動で取り込みます...</div>
-        <div style="margin-top:12px;width:24px;height:24px;border:3px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin:12px auto 0;"></div>
-      </div>
-      <button onclick="_tg7CancelWait()" style="margin-top:8px;background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 14px;font-size:11px;cursor:pointer;">キャンセル</button>
-    `;
-  }
-  showToast('📷 TG-7で撮影してください', 'info');
-}
-
-function _tg7CancelWait() {
-  _tg7WaitingSlot = null;
-  // ポップアップを再描画
-  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
-  const slot  = slots.find(s => s.key === _popupSlotKey);
-  if (slot) updatePopup(slot);
-}
-
-// 指定スロットに写真を取り込む共通関数
-async function _importSDPhotoToSlot(url, name, slotKey) {
-  try {
-    const resp = await fetch(url, { mode: 'cors' });
-    const blob = await resp.blob();
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      compressImage(e.target.result, 0.75, 1280).then(compressed => {
-        if (!state.photos) state.photos = {};
-        const newEntry = { dataURL: compressed, label: '' };
-        const existing = state.photos[slotKey];
-        if (Array.isArray(existing)) {
-          existing.push(newEntry);
-          _popupPhotoIdx = existing.length - 1;
-        } else if (existing) {
-          const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
-          state.photos[slotKey] = [prev, newEntry];
-          _popupPhotoIdx = 1;
-        } else {
-          state.photos[slotKey] = [newEntry];
-          _popupPhotoIdx = 0;
-        }
-        const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
-        const slot  = slots.find(s => s.key === slotKey);
-        if (slot) updatePopup(slot);
-        _refreshPhotoGrid(slotKey);
-        showToast(`✅ ${name} を取り込みました`, 'success');
-      });
-    };
-    reader.readAsDataURL(blob);
-  } catch(err) {
-    showToast('❌ 取り込み失敗。TG-7との接続を確認してください', 'error');
-  }
-}
-
 // ポップアップから「デジカメから取得」を押したとき
 function openSDModalForPopup() {
   _sdFromPopup = true;
@@ -4537,7 +4405,7 @@ function selectSDPhoto(url, name, el) {
 
   if (_sdFromPopup) {
     // ポップアップ経由：確認なしで即取り込み
-    _importSDPhotoToSlot(url, name, _popupSlotKey);
+    _importSDPhotoToPopup(url, name);
   } else {
     document.getElementById('sd-assign-panel').style.display = 'block';
     document.getElementById('sd-status').textContent = `✅ 「${name}」を選択中`;
@@ -4545,6 +4413,47 @@ function selectSDPhoto(url, name, el) {
 }
 
 // ポップアップスロットへ直接取り込み
+async function _importSDPhotoToPopup(url, name) {
+  const status = document.getElementById('sd-status');
+  status.textContent = '🔄 取り込み中...';
+  status.style.color = 'var(--text2)';
+  try {
+    const resp = await fetch(url, { mode: 'cors' });
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      compressImage(e.target.result, 0.75, 1280).then(compressed => {
+        if (!state.photos) state.photos = {};
+        const newEntry = { dataURL: compressed, label: '' };
+        const existing = state.photos[_popupSlotKey];
+        if (Array.isArray(existing)) {
+          existing.push(newEntry);
+          _popupPhotoIdx = existing.length - 1;
+        } else if (existing) {
+          const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
+          state.photos[_popupSlotKey] = [prev, newEntry];
+          _popupPhotoIdx = 1;
+        } else {
+          state.photos[_popupSlotKey] = [newEntry];
+          _popupPhotoIdx = 0;
+        }
+        closeSDModal();
+        const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+        const slot  = slots.find(s => s.key === _popupSlotKey);
+        if (slot) updatePopup(slot);
+        _refreshPhotoGrid(_popupSlotKey);
+        showToast(`✅ ${name} を取り込みました`, 'success');
+      });
+    };
+    reader.readAsDataURL(blob);
+  } catch(err) {
+    status.textContent = '❌ 取り込み失敗。再度タップしてください';
+    status.style.color = 'var(--red)';
+  }
+}
+
+async function assignSDPhoto() {
+  if (!_sdSelectedPhotoURL) return;
   const slotKey = document.getElementById('sd-slot-select').value;
   if (!slotKey) return;
 
