@@ -2132,30 +2132,45 @@ function setupDrawCanvas(key, imgData) {
     }
 
     // キャンバスリサイズ（ズーム前の自然サイズを基準に）
-    const resizeCanvas = () => {
+    // fromResize=true の場合はtransformをリセットせずCanvasサイズのみ更新
+    const resizeCanvas = (fromResize = false) => {
       // ペン描画中はリサイズをスキップ（ズームリセット防止）
       if (drawState[key]?.drawing) return;
 
       const inner = document.getElementById(`zoom-inner-${key}`);
       // zoomStatesから現在のズーム状態を取得（確実に復元するため）
       const savedZoom = zoomStates[key];
-      if (inner) inner.style.transform = 'none';
+      const hasZoomState = savedZoom && (savedZoom.scale > 1 || savedZoom.panX !== 0 || savedZoom.panY !== 0);
+
+      // resizeイベント由来かつズーム状態がある場合はtransformをリセットしない
+      // （リセットするとスクロール位置が中央に戻る）
+      if (!fromResize || !hasZoomState) {
+        if (inner) inner.style.transform = 'none';
+      }
 
       const rect = baseImg.getBoundingClientRect();
       const dpr  = window.devicePixelRatio;
 
       // rectが0の場合は再試行（まだレイアウト未確定）
       if (rect.width === 0) {
-        setTimeout(resizeCanvas, 100);
+        setTimeout(() => resizeCanvas(fromResize), 100);
         return;
       }
 
-      canvas.width  = rect.width  * dpr;
-      canvas.height = rect.height * dpr;
+      // fromResizeかつズームのみ（panなし）の場合、Canvasサイズをズームを考慮して計算
+      let canvasW = rect.width;
+      let canvasH = rect.height;
+      if (fromResize && hasZoomState && savedZoom.scale > 1) {
+        canvasW = rect.width / savedZoom.scale;
+        canvasH = rect.height / savedZoom.scale;
+      }
+
+      canvas.width  = canvasW  * dpr;
+      canvas.height = canvasH * dpr;
 
       if (inner) {
-        // zoomStatesから確実に復元（prevTransformより確実）
-        if (savedZoom && (savedZoom.scale > 1 || savedZoom.panX !== 0 || savedZoom.panY !== 0)) {
+        // zoomStatesから確実に復元
+        if (hasZoomState) {
           inner.style.transformOrigin = '0 0';
           inner.style.transform = `translate(${savedZoom.panX}px,${savedZoom.panY}px) scale(${savedZoom.scale})`;
         } else {
@@ -2183,14 +2198,14 @@ function setupDrawCanvas(key, imgData) {
     const tryResizeCanvas = () => {
       const rect = baseImg.getBoundingClientRect();
       if (rect.width > 0) {
-        resizeCanvas();
+        resizeCanvas(false);
       } else if (retryCount < 20) {
         retryCount++;
         setTimeout(tryResizeCanvas, 100);
       }
     };
     setTimeout(tryResizeCanvas, 100);
-    window.addEventListener('resize', () => resizeCanvas());
+    window.addEventListener('resize', () => resizeCanvas(true));
 
     setupDrawEvents(canvas, svg, key);
 
