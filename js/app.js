@@ -1436,10 +1436,13 @@ function showToolSizeMenu(btn, key) {
 
   const sizeRow = document.createElement('div');
   sizeRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
+  // 現在ツール固有の太さを取得（sizeByToolがあればそこから）
+  const toolKey = btn.dataset.tool === 'square' ? 'rect' : btn.dataset.tool;
+  const currentSize = ds.sizeByTool ? (ds.sizeByTool[toolKey] ?? ds.sizeMM) : ds.sizeMM;
   SIZE_OPTIONS.forEach(mm => {
     const b = document.createElement('button');
     b.textContent = mm;
-    const isActive = ds.sizeMM === mm;
+    const isActive = currentSize === mm;
     b.style.cssText = `
       padding:6px 10px; font-size:13px; font-weight:700; border-radius:8px; border:none; cursor:pointer;
       background:${isActive ? 'var(--accent,#3b82f6)' : 'var(--surface,#1e2433)'};
@@ -1500,16 +1503,24 @@ function showToolSizeMenu(btn, key) {
   }, 100);
 }
 
-// setSizeMM の値渡し版（ボタン参照不要）
+// setSizeMM の値渡し版：現在のツールのみ太さを更新
 function setSizeMMByValue(mm, key) {
   const ds = drawState[key];
   if (!ds) return;
+  // 現在のツールに対応するsizeByToolキーを特定
+  const tool = ds.tool === 'square' ? 'rect' : ds.tool;
+  if (!ds.sizeByTool) ds.sizeByTool = { pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 };
+  // 現在のツールのみ更新
+  if (ds.sizeByTool.hasOwnProperty(tool)) {
+    ds.sizeByTool[tool] = mm;
+    if (tool === 'rect') ds.sizeByTool.square = mm; // rect/squareは同期
+  }
+  // sizeMM は現在ツールの値を反映
   ds.sizeMM = mm;
-  // 全ツールのサイズラベルを更新
-  ['pen','line','arrow','rect','ellipse'].forEach(tool => {
-    const label = document.getElementById(`sizelabel-${tool}-${key}`);
-    if (label) label.textContent = mm;
-  });
+  // 現在ツールのラベルのみ更新
+  const labelTool = (ds.tool === 'square') ? 'rect' : ds.tool;
+  const label = document.getElementById(`sizelabel-${labelTool}-${key}`);
+  if (label) label.textContent = mm;
 }
 
 // setPattern の値渡し版
@@ -2318,6 +2329,7 @@ function setupDrawCanvas(key, imgData) {
     if (!drawState[key]) {
       drawState[key] = {
         tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
+        sizeByTool:{ pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 },
         penHistory:[], penStrokes:[], objects:[], selectedId:null, clipboard:null,
         drawing:false, startX:0, startY:0, savedPenData:null
       };
@@ -3430,6 +3442,17 @@ function setTool(tool, key) {
     rectBtn.classList.toggle('active', tool === 'rect' || tool === 'square');
     rectBtn.textContent = tool === 'square' ? '■ 正方形' : '▭ 長方形';
   }
+  // ツール切り替え時にそのツールの太さをsizeMMに反映し、ラベルも更新
+  if (!ds.sizeByTool) ds.sizeByTool = { pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 };
+  const sizeKey = tool === 'square' ? 'rect' : tool;
+  if (ds.sizeByTool.hasOwnProperty(sizeKey)) {
+    ds.sizeMM = ds.sizeByTool[sizeKey];
+    // ラベル表示を更新（rect/squareは同じボタン）
+    const labelTool = (tool === 'square') ? 'rect' : tool;
+    const label = document.getElementById(`sizelabel-${labelTool}-${key}`);
+    if (label) label.textContent = ds.sizeMM;
+  }
+
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (canvas) {
     canvas.style.cursor = tool === 'select' ? 'default'
@@ -4093,6 +4116,7 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
       if (!drawState[key]) {
         drawState[key] = {
           tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
+          sizeByTool:{ pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 },
           penHistory:[], penStrokes:[], objects:[], selectedId:null, clipboard:null,
           drawing:false, startX:0, startY:0, savedPenData:null, history:[]
         };
