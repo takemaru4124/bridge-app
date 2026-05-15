@@ -82,6 +82,8 @@ const state = {
   extraPhotos: [],
   currentSection: null,
   currentPhotoTarget: null,
+  // 担当区分: 'A'（左側）| 'B'（右側）| null（未設定）
+  role: null,
 };
 
 // ===== メニュー定義（mapKeyでページを動的解決）=====
@@ -998,10 +1000,15 @@ async function renderPhotoLinkButtons(drawKey) {
 
     spanSlots.forEach(slot => {
       const btn = document.createElement('button');
-      const hasPhoto = !!state.photos?.[slot.key];
+      const photoList = normalizePhotoList(state.photos?.[slot.key]);
+      const hasPhoto  = photoList.length > 0;
+      const roleClass = _getPhotoRoleClass(photoList);
+      const roleColor = roleClass === 'role-A' ? '#3b82f6' : roleClass === 'role-B' ? '#f97316' : null;
+      const borderColor = hasPhoto ? (roleColor || 'var(--green)') : 'var(--border)';
+      const bgColor     = hasPhoto ? (roleColor || 'var(--green)') : 'var(--surface)';
       btn.style.cssText = `
-        background:${hasPhoto ? 'var(--green)' : 'var(--surface)'};
-        border:1px solid ${hasPhoto ? 'var(--green)' : 'var(--border)'};
+        background:${bgColor};
+        border:2px solid ${borderColor};
         color:${hasPhoto ? '#fff' : 'var(--text)'};
         border-radius:8px; padding:8px 12px; font-size:12px;
         font-weight:700; cursor:pointer; white-space:nowrap;
@@ -1136,7 +1143,7 @@ function popupCapturePhoto(addMode) {
     reader.onload = (ev) => {
       if (!state.photos) state.photos = {};
       compressImage(ev.target.result, 0.75, 1280).then(compressed => {
-        const newEntry = { dataURL: compressed, label: '' };
+        const newEntry = { dataURL: compressed, label: '', role: state.role || null };
         const existing = state.photos[_popupSlotKey];
         if (addMode && Array.isArray(existing)) {
           existing.push(newEntry);
@@ -3872,6 +3879,15 @@ async function saveWorkData() {
   }
   showToast('💾 保存中...', '');
   try {
+    // 担当区分を選択（未設定の場合のみ確認）
+    if (!state.role) {
+      const choice = confirm(
+        '担当区分を選択してください\n\n' +
+        '【OK】 → A（橋の左側）\n' +
+        '【キャンセル】 → B（橋の右側）'
+      );
+      state.role = choice ? 'A' : 'B';
+    }
     // 全キャンバスのペンデータを収集
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
@@ -3918,6 +3934,7 @@ async function saveWorkData() {
       version:   '1.4.6',
       savedAt:   new Date().toISOString(),
       pdfName:   state.pdfName || '橋梁点検',
+      role:      state.role || null,
       photos:    compressedPhotos,
       extraPhotos: state.extraPhotos || [],
       drawings:  state.drawings || {},
@@ -3944,7 +3961,8 @@ async function saveWorkData() {
 
     const now     = new Date();
     const dateStr = `${now.getMonth()+1}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-    const fileName = `${state.pdfName || '点検データ'}_作業保存_${dateStr}.zip`;
+    const rolePart = state.role ? `_担当${state.role}` : '';
+    const fileName = `${state.pdfName || '点検データ'}${rolePart}_作業保存_${dateStr}.zip`;
 
     showToast('📦 ZIP生成中...', '');
     const blob = await zip.generateAsync({ type: 'blob' });
@@ -4102,10 +4120,12 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   const photoCount   = Object.keys(data.photos   || {}).length;
   const drawingCount = Object.keys(data.drawState || data.drawings || {}).length;
   const hasPDF = !!(pdfArrayBuffer || pdfBase64);
+  const roleLabel = data.role === 'A' ? '担当A（左側）' : data.role === 'B' ? '担当B（右側）' : '未設定';
 
   const ok = confirm(
     `📥 データを取り込みます\n\n` +
     `・橋梁名：${data.pdfName || '不明'}\n` +
+    `・担当：${roleLabel}\n` +
     `・撮影写真：${photoCount}枚\n` +
     `・書き込みデータ：${drawingCount}ページ\n` +
     `・PDF：${hasPDF ? '含む（自動復元）' : 'なし'}\n\n` +
@@ -4113,9 +4133,32 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   );
   if (!ok) return;
 
-  // 写真・書き込みを統合
-  Object.assign(state.photos,   data.photos   || {});
-  Object.assign(state.drawings, data.drawings  || {});
+  // 写真を統合（スロットごとに配列結合・dataURL重複除去）
+  for (const [key, raw] of Object.entries(data.photos || {})) {
+    const incoming = Array.isArray(raw) ? raw : (raw?.dataURL ? [raw] : (typeof raw === 'string' && raw ? [{ dataURL: raw }] : []));
+    if (!incoming.length) continue;
+    // incomingにロール情報を付与
+    const tagged = incoming.map(p => ({ ...p, role: data.role || null }));
+    const existing = state.photos[key];
+    if (!existing) {
+      state.photos[key] = tagged;
+    } else {
+      const existList = Array.isArray(existing) ? existing : (existing?.dataURL ? [existing] : (typeof existing === 'string' ? [{ dataURL: existing }] : []));
+      const existURLs = new Set(existList.map(p => p.dataURL));
+      const newItems  = tagged.filter(p => !existURLs.has(p.dataURL));
+      state.photos[key] = [...existList, ...newItems];
+    }
+  }
+
+  // extraPhotosを統合（id重複除去・ロール情報付与）
+  const existingIds = new Set((state.extraPhotos || []).map(p => p.id));
+  const incomingExtra = (data.extraPhotos || [])
+    .filter(p => !existingIds.has(p.id))
+    .map(p => ({ ...p, role: data.role || null }));
+  state.extraPhotos = [...(state.extraPhotos || []), ...incomingExtra];
+
+  // drawingsを統合
+  Object.assign(state.drawings, data.drawings || {});
 
   // drawStateを復元
   if (data.drawState) {
@@ -4814,6 +4857,16 @@ function normalizePhotoList(raw) {
   return [];
 }
 
+// 写真リストから担当色クラスを返す（A優先・混在はAを表示）
+function _getPhotoRoleClass(photoList) {
+  if (!photoList || !photoList.length) return '';
+  const roles = photoList.map(p => p.role).filter(Boolean);
+  if (!roles.length) return '';
+  if (roles.includes('A')) return 'role-A';
+  if (roles.includes('B')) return 'role-B';
+  return '';
+}
+
 function renderPhotoSlot(slot, sectionKey) {
   const photoRaw  = state.photos[slot.key];
   const photoList = normalizePhotoList(photoRaw);
@@ -4824,6 +4877,9 @@ function renderPhotoSlot(slot, sectionKey) {
   const nonBadge   = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
   const countBadge = hasPhoto && photoList.length > 1
     ? `<span class="photo-card-badge-count">${photoList.length}枚</span>` : '';
+  const roleCls    = hasPhoto ? _getPhotoRoleClass(photoList) : '';
+  const roleBadge  = roleCls === 'role-A' ? '<span class="role-badge">担当A</span>'
+                   : roleCls === 'role-B' ? '<span class="role-badge">担当B</span>' : '';
   const statusHTML = hasPhoto
     ? `<span class="photo-card-status done">✓ 撮影済</span>`
     : `<span class="photo-card-status">未撮影</span>`;
@@ -4865,9 +4921,9 @@ function renderPhotoSlot(slot, sectionKey) {
     : `<div class="photo-half-noprev"><span>—</span><p>前回写真なし</p></div>`;
 
   return `
-    <div class="photo-card" data-slot="${slot.key}" data-section="${sectionKey}">
+    <div class="photo-card${photoList.length > 0 ? (' ' + _getPhotoRoleClass(photoList)) : ''}" data-slot="${slot.key}" data-section="${sectionKey}"${photoList.length > 0 ? (' style="border-color:var(--role-color,var(--border));box-shadow:0 0 0 1.5px var(--role-color,transparent);"') : ''}>
       <div class="photo-card-header">
-        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}${countBadge}</div>
+        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}${countBadge}${roleBadge}</div>
         ${statusHTML}
       </div>
       <div class="photo-pair">
@@ -5032,7 +5088,7 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
 
     // 複数枚対応：配列で管理（圧縮してからメモリに保存）
     compressImage(ev.target.result, 0.75, 1280).then(compressed => {
-    const newEntry = { dataURL: compressed, label: slot.label };
+    const newEntry = { dataURL: compressed, label: slot.label, role: state.role || null };
     const existing = state.photos[slot.key];
     if (addMode && Array.isArray(existing)) {
       existing.push(newEntry);
@@ -5818,7 +5874,7 @@ function saveExtraPhoto(sectionKey, dataURL) {
 
   const id = 'extra_' + Date.now();
   if (!state.extraPhotos) state.extraPhotos = [];
-  state.extraPhotos.push({ id, sectionKey, dataURL, info });
+  state.extraPhotos.push({ id, sectionKey, dataURL, info, role: state.role || null });
 
   // 損傷追加モード経由の場合、引き出し線にラベルを付与
   if (!isS3 && _damageAddDrawKey) {
@@ -5893,12 +5949,16 @@ function renderExtraPhotoGrid(sectionKey, appendOnly = false) {
     const memo   = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
     const div = document.createElement('div');
     div.dataset.photoId = p.id;
-    div.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;';
+    const roleClass = p.role === 'A' ? 'role-A' : p.role === 'B' ? 'role-B' : '';
+    const roleBorderColor = p.role === 'A' ? '#3b82f6' : p.role === 'B' ? '#f97316' : 'var(--border)';
+    const roleBadgeHTML = p.role ? `<span class="role-badge" style="background:${p.role === 'A' ? '#3b82f6' : '#f97316'};color:#fff;">担当${p.role}</span>` : '';
+    div.className = roleClass;
+    div.style.cssText = `background:var(--surface2);border:2px solid ${roleBorderColor};border-radius:8px;overflow:hidden;position:relative;`;
     div.innerHTML = `
       <img src="${p.dataURL}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;" onclick="openExtraPhotoLightbox('${p.id}')">
       <button onclick="deleteExtraPhoto('${p.id}','${sectionKey}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;">✕</button>
       <div style="padding:6px 8px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}${roleBadgeHTML}</div>
         ${memo}
       </div>`;
     return div;
@@ -5934,6 +5994,16 @@ function openExtraPhotoLightbox(id) {
 (function injectMultiPhotoStyles() {
   const style = document.createElement('style');
   style.textContent = `
+    /* 担当色 A=青系 B=橙系 */
+    .role-A { --role-color: #3b82f6; --role-bg: rgba(59,130,246,0.12); }
+    .role-B { --role-color: #f97316; --role-bg: rgba(249,115,22,0.12); }
+    .role-badge {
+      display:inline-block; font-size:10px; font-weight:700;
+      border-radius:6px; padding:1px 6px; margin-left:4px; vertical-align:middle;
+    }
+    .role-A .role-badge { background:#3b82f6; color:#fff; }
+    .role-B .role-badge { background:#f97316; color:#fff; }
+
     /* 枚数バッジ */
     .photo-card-badge-count {
       display:inline-block; background:#3b82f6; color:#fff;
