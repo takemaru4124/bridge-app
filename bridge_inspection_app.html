@@ -12,7 +12,7 @@
 <script>
   // Service Worker登録（network-first／オフライン対応）
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').catch(err => {
+    navigator.serviceWorker.register('./service-worker.js').catch(err => {
       console.warn('SW登録失敗:', err);
     });
   }
