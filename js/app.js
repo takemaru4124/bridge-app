@@ -3971,16 +3971,26 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   }
 }
 
-// ===== Wi-Fi SDカード連携 =====
+// ===== デジカメ Wi-Fi 写真取り込み =====
 let _sdSelectedPhotoURL = null;
+let _sdCurrentTab = 'tg7';        // 'tg7' | 'flashair'
+let _sdFromPopup  = false;        // ポップアップから呼ばれたか
+
+// ポップアップから「デジカメから取得」を押したとき
+function openSDModalForPopup() {
+  _sdFromPopup = true;
+  showSDCardModal();
+}
 
 function showSDCardModal() {
   document.getElementById('sd-modal').style.display = 'block';
   document.getElementById('sd-status').textContent = '';
   document.getElementById('sd-photo-list').innerHTML = '';
   document.getElementById('sd-assign-panel').style.display = 'none';
+  _sdSelectedPhotoURL = null;
 
-  // 写真番号スロットをセレクトボックスに設定
+  // ポップアップからの場合は割り当てパネルを非表示（自動でポップアップスロットに入れる）
+  // 写真番号スロットをセレクトボックスに設定（メニューからの通常利用）
   const select = document.getElementById('sd-slot-select');
   select.innerHTML = '';
   const allSlots = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS];
@@ -3988,13 +3998,57 @@ function showSDCardModal() {
     const opt = document.createElement('option');
     opt.value = slot.key;
     opt.textContent = `No.${slot.prevNo}${slot.isNON ? ' (NON)' : ''}`;
+    // ポップアップ経由の場合は現在スロットを選択状態にする
+    if (_sdFromPopup && _popupSlotKey && slot.key === _popupSlotKey) opt.selected = true;
     select.appendChild(opt);
   });
+
+  switchSDTab(_sdCurrentTab);
+}
+
+function switchSDTab(tab) {
+  _sdCurrentTab = tab;
+  const isTG7 = tab === 'tg7';
+
+  // タブボタンの見た目
+  const tg7Btn = document.getElementById('sd-tab-tg7');
+  const faBtn  = document.getElementById('sd-tab-flashair');
+  if (tg7Btn) {
+    tg7Btn.style.background = isTG7 ? 'var(--accent)' : 'var(--surface2)';
+    tg7Btn.style.color      = isTG7 ? '#fff' : 'var(--text2)';
+    tg7Btn.style.border     = isTG7 ? 'none' : '1px solid var(--border)';
+  }
+  if (faBtn) {
+    faBtn.style.background = !isTG7 ? 'var(--accent)' : 'var(--surface2)';
+    faBtn.style.color      = !isTG7 ? '#fff' : 'var(--text2)';
+    faBtn.style.border     = !isTG7 ? 'none' : '1px solid var(--border)';
+  }
+
+  // ヒント・デフォルトURL
+  const hintTG7 = document.getElementById('sd-hint-tg7');
+  const hintFA  = document.getElementById('sd-hint-flashair');
+  if (hintTG7) hintTG7.style.display = isTG7 ? 'block' : 'none';
+  if (hintFA)  hintFA.style.display  = isTG7 ? 'none'  : 'block';
+
+  const urlInput = document.getElementById('sd-url-input');
+  if (urlInput) {
+    urlInput.value = isTG7 ? 'http://192.168.0.10/' : 'http://flashair/';
+    urlInput.placeholder = isTG7
+      ? '例: http://192.168.0.10/'
+      : '例: http://flashair/ または http://192.168.0.1/';
+  }
+
+  // リセット
+  document.getElementById('sd-status').textContent = '';
+  document.getElementById('sd-photo-list').innerHTML = '';
+  document.getElementById('sd-assign-panel').style.display = 'none';
+  _sdSelectedPhotoURL = null;
 }
 
 function closeSDModal() {
   document.getElementById('sd-modal').style.display = 'none';
   _sdSelectedPhotoURL = null;
+  _sdFromPopup = false;
 }
 
 async function connectSDCard() {
@@ -4005,64 +4059,28 @@ async function connectSDCard() {
   status.textContent = '🔄 接続中...';
   status.style.color = 'var(--text2)';
   list.innerHTML = '';
+  _sdSelectedPhotoURL = null;
+  document.getElementById('sd-assign-panel').style.display = 'none';
 
   try {
-    // FlashAirのAPI: /command.cgi?op=100&DIR=/DCIM
-    const dirURL = `${baseURL}/command.cgi?op=100&DIR=/DCIM`;
-    const resp   = await fetch(dirURL, { mode: 'cors' });
-    const text   = await resp.text();
+    const photos = _sdCurrentTab === 'tg7'
+      ? await _fetchTG7Photos(baseURL, status)
+      : await _fetchFlashAirPhotos(baseURL, status);
 
-    // ファイル一覧を解析
-    const lines = text.split('\n').filter(l => l.trim());
-    const photos = [];
-    for (const line of lines) {
-      const parts = line.split(',');
-      if (parts.length >= 4) {
-        const dir  = parts[0];
-        const name = parts[1];
-        if (/\.(jpg|jpeg|png)$/i.test(name)) {
-          photos.push({ dir, name, url: `${baseURL}${dir}/${name}` });
-        }
-      }
-    }
-
-    // サブディレクトリも探索
-    if (photos.length === 0) {
-      // /DCIM直下のサブフォルダを試す
-      const subResp = await fetch(`${baseURL}/command.cgi?op=100&DIR=/DCIM`, { mode: 'cors' });
-      const subText = await subResp.text();
-      const dirs = subText.split('\n')
-        .filter(l => l.includes('/DCIM'))
-        .map(l => l.split(',')[0]);
-
-      for (const d of dirs.slice(0, 5)) {
-        const pResp = await fetch(`${baseURL}/command.cgi?op=100&DIR=${d}`, { mode: 'cors' });
-        const pText = await pResp.text();
-        pText.split('\n').filter(l => /\.(jpg|jpeg|png)$/i.test(l)).forEach(l => {
-          const p = l.split(',');
-          if (p[1]) photos.push({ dir: d, name: p[1], url: `${baseURL}${d}/${p[1]}` });
-        });
-      }
-    }
-
-    if (photos.length === 0) {
-      status.textContent = '⚠️ 写真が見つかりませんでした';
-      status.style.color = 'var(--yellow)';
-      return;
-    }
+    if (!photos || photos.length === 0) return;
 
     status.textContent = `✅ ${photos.length}枚の写真が見つかりました。タップして選択してください`;
     status.style.color = 'var(--green)';
 
-    // 写真一覧を表示
-    photos.forEach(photo => {
+    // 写真一覧を表示（新着順）
+    photos.reverse().forEach(photo => {
       const div = document.createElement('div');
-      div.style.cssText = 'cursor:pointer;border:2px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--surface2);display:flex;align-items:center;justify-content:center;';
-      div.innerHTML = `<div style="font-size:10px;color:var(--text2);text-align:center;padding:4px;">${photo.name}</div>`;
+      div.style.cssText = 'cursor:pointer;border:2px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--surface2);display:flex;align-items:center;justify-content:center;position:relative;';
+      div.innerHTML = `<div style="font-size:10px;color:var(--text2);text-align:center;padding:4px;word-break:break-all;">${photo.name}</div>`;
       div.onclick = () => selectSDPhoto(photo.url, photo.name, div);
 
-      // サムネイルを遅延ロード
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
         div.innerHTML = '';
         img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
@@ -4074,21 +4092,156 @@ async function connectSDCard() {
 
   } catch(err) {
     console.error(err);
-    status.textContent = '❌ 接続失敗。iPadのWi-FiがSDカードに接続されているか確認してください';
+    status.textContent = '❌ 接続失敗。iPadのWi-Fiがカメラに接続されているか確認してください';
     status.style.color = 'var(--red)';
   }
 }
 
+// TG-7 (OLYMPUS) 写真一覧取得
+// TG-7はHTTPサーバーとして動作し、/DCIM以下をブラウザで参照できる
+async function _fetchTG7Photos(baseURL, status) {
+  const photos = [];
+
+  // DCIM直下のフォルダ一覧を取得（HTMLをパース）
+  const dcimResp = await fetch(`${baseURL}/DCIM/`, { mode: 'cors' });
+  if (!dcimResp.ok) throw new Error('DCIM取得失敗');
+  const dcimHTML = await dcimResp.text();
+
+  // フォルダ名を抽出（例: 100OLYMP/）
+  const folderMatches = [...dcimHTML.matchAll(/href="([^"]+\/)"(?!\.\.)/gi)];
+  const folders = folderMatches
+    .map(m => m[1].replace(/^.*\//, ''))  // パス部分を除去
+    .filter(f => f && f !== '../' && f !== './')
+    .map(f => f.replace(/\/$/, ''));
+
+  if (folders.length === 0) {
+    // フォルダが見つからない場合、DCIM直下を直接試す
+    folders.push('');
+  }
+
+  for (const folder of folders.slice(0, 10)) {
+    const dirPath = folder ? `/DCIM/${folder}/` : '/DCIM/';
+    try {
+      const resp = await fetch(`${baseURL}${dirPath}`, { mode: 'cors' });
+      if (!resp.ok) continue;
+      const html = await resp.text();
+      const fileMatches = [...html.matchAll(/href="([^"]+\.(?:jpg|jpeg|JPG|JPEG))"/gi)];
+      fileMatches.forEach(m => {
+        const name = m[1].split('/').pop();
+        photos.push({ name, url: `${baseURL}${dirPath}${name}` });
+      });
+    } catch(e) { /* フォルダエラーはスキップ */ }
+  }
+
+  if (photos.length === 0) {
+    status.textContent = '⚠️ 写真が見つかりません。カメラのWi-Fiとの接続を確認してください';
+    status.style.color = 'var(--yellow)';
+    return null;
+  }
+  return photos;
+}
+
+// FlashAir 写真一覧取得
+async function _fetchFlashAirPhotos(baseURL, status) {
+  const photos = [];
+
+  const dirURL = `${baseURL}/command.cgi?op=100&DIR=/DCIM`;
+  const resp   = await fetch(dirURL, { mode: 'cors' });
+  const text   = await resp.text();
+
+  const lines = text.split('\n').filter(l => l.trim());
+  for (const line of lines) {
+    const parts = line.split(',');
+    if (parts.length >= 2) {
+      const dir  = parts[0];
+      const name = parts[1];
+      if (/\.(jpg|jpeg|png)$/i.test(name)) {
+        photos.push({ dir, name, url: `${baseURL}${dir}/${name}` });
+      }
+    }
+  }
+
+  // サブディレクトリ探索
+  if (photos.length === 0) {
+    const subText = text;
+    const dirs = subText.split('\n')
+      .filter(l => l.includes('/DCIM'))
+      .map(l => l.split(',')[0]);
+
+    for (const d of dirs.slice(0, 5)) {
+      try {
+        const pResp = await fetch(`${baseURL}/command.cgi?op=100&DIR=${d}`, { mode: 'cors' });
+        const pText = await pResp.text();
+        pText.split('\n').filter(l => /\.(jpg|jpeg|png)$/i.test(l)).forEach(l => {
+          const p = l.split(',');
+          if (p[1]) photos.push({ dir: d, name: p[1], url: `${baseURL}${d}/${p[1]}` });
+        });
+      } catch(e) {}
+    }
+  }
+
+  if (photos.length === 0) {
+    status.textContent = '⚠️ 写真が見つかりませんでした';
+    status.style.color = 'var(--yellow)';
+    return null;
+  }
+  return photos;
+}
+
 function selectSDPhoto(url, name, el) {
-  // 選択状態を更新
   document.querySelectorAll('#sd-photo-list > div').forEach(d => {
     d.style.borderColor = 'var(--border)';
   });
   el.style.borderColor = 'var(--accent)';
-
   _sdSelectedPhotoURL = url;
-  document.getElementById('sd-assign-panel').style.display = 'block';
-  document.getElementById('sd-status').textContent = `✅ 「${name}」を選択中`;
+
+  if (_sdFromPopup) {
+    // ポップアップ経由：確認なしで即取り込み
+    _importSDPhotoToPopup(url, name);
+  } else {
+    document.getElementById('sd-assign-panel').style.display = 'block';
+    document.getElementById('sd-status').textContent = `✅ 「${name}」を選択中`;
+  }
+}
+
+// ポップアップスロットへ直接取り込み
+async function _importSDPhotoToPopup(url, name) {
+  const status = document.getElementById('sd-status');
+  status.textContent = '🔄 取り込み中...';
+  status.style.color = 'var(--text2)';
+  try {
+    const resp = await fetch(url, { mode: 'cors' });
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      compressImage(e.target.result, 0.75, 1280).then(compressed => {
+        if (!state.photos) state.photos = {};
+        const newEntry = { dataURL: compressed, label: '' };
+        const existing = state.photos[_popupSlotKey];
+        if (Array.isArray(existing)) {
+          existing.push(newEntry);
+          _popupPhotoIdx = existing.length - 1;
+        } else if (existing) {
+          const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
+          state.photos[_popupSlotKey] = [prev, newEntry];
+          _popupPhotoIdx = 1;
+        } else {
+          state.photos[_popupSlotKey] = [newEntry];
+          _popupPhotoIdx = 0;
+        }
+        closeSDModal();
+        const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+        const slot  = slots.find(s => s.key === _popupSlotKey);
+        if (slot) updatePopup(slot);
+        _refreshPhotoGrid(_popupSlotKey);
+        showToast(`✅ ${name} を取り込みました`, 'success');
+      });
+    };
+    reader.readAsDataURL(blob);
+  } catch(err) {
+    status.textContent = '❌ 取り込み失敗。再度タップしてください';
+    status.style.color = 'var(--red)';
+  }
 }
 
 async function assignSDPhoto() {
@@ -4097,15 +4250,18 @@ async function assignSDPhoto() {
   if (!slotKey) return;
 
   try {
-    const resp = await fetch(_sdSelectedPhotoURL);
+    const resp = await fetch(_sdSelectedPhotoURL, { mode: 'cors' });
     const blob = await resp.blob();
     const reader = new FileReader();
     reader.onload = (e) => {
-      if (!state.photos) state.photos = {};
-      state.photos[slotKey] = e.target.result;
-      showToast('✅ 写真を割り当てました！', 'success');
-      document.getElementById('sd-assign-panel').style.display = 'none';
-      _sdSelectedPhotoURL = null;
+      compressImage(e.target.result, 0.75, 1280).then(compressed => {
+        if (!state.photos) state.photos = {};
+        state.photos[slotKey] = compressed;
+        showToast('✅ 写真を割り当てました！', 'success');
+        document.getElementById('sd-assign-panel').style.display = 'none';
+        _sdSelectedPhotoURL = null;
+        _refreshPhotoGrid(slotKey);
+      });
     };
     reader.readAsDataURL(blob);
   } catch(err) {
