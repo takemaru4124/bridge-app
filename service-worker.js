@@ -25,12 +25,17 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // ネットワーク優先：取得できればキャッシュを更新、失敗時はキャッシュから返す
+  // キャッシュ優先：キャッシュにあれば即返す、バックグラウンドで更新
+  // Wi-FiがOFFでもPWA起動できる
   e.respondWith(
-    fetch(e.request).then(response => {
-      const clone = response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-      return response;
-    }).catch(() => caches.match(e.request))
+    caches.match(e.request).then(cached => {
+      const networkFetch = fetch(e.request).then(response => {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+        return response;
+      }).catch(() => cached);
+
+      return cached || networkFetch;
+    })
   );
 });
