@@ -3440,7 +3440,10 @@ function setTool(tool, key) {
   const rectBtn = document.getElementById(`tool-rect-${key}`);
   if (rectBtn) {
     rectBtn.classList.toggle('active', tool === 'rect' || tool === 'square');
-    rectBtn.textContent = tool === 'square' ? '■ 正方形' : '▭ 長方形';
+    // textContentだとspanごと消えるのでinnerHTMLで更新
+    const rectLabel = document.getElementById(`sizelabel-rect-${key}`);
+    const rectSizeTxt = rectLabel ? rectLabel.outerHTML : '<span class="tool-size-label" id="sizelabel-rect-' + key + '">0.25</span>';
+    rectBtn.innerHTML = rectSizeTxt + (tool === 'square' ? '■ 正方形' : '▭ 長方形');
   }
   // ツール切り替え時にそのツールの太さをsizeMMに反映し、ラベルも更新
   if (!ds.sizeByTool) ds.sizeByTool = { pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 };
