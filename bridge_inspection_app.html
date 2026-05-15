@@ -151,17 +151,25 @@
 <div id="sd-modal" style="display:none;position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.85);overflow-y:auto;">
   <div style="background:var(--surface);margin:16px;border-radius:16px;overflow:hidden;">
     <div style="padding:14px 16px;background:var(--surface2);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-      <div style="font-size:14px;font-weight:700;color:var(--accent);">📷 Wi-Fi SDカード 写真取り込み</div>
+      <div style="font-size:14px;font-weight:700;color:var(--accent);">📷 デジカメ Wi-Fi 写真取り込み</div>
       <button onclick="closeSDModal()" style="background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;">✕</button>
     </div>
     <div style="padding:16px;">
-      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+      <!-- 機種選択タブ -->
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        <button id="sd-tab-tg7"      onclick="switchSDTab('tg7')"      style="flex:1;padding:8px 4px;border-radius:8px;border:none;font-size:12px;font-weight:700;cursor:pointer;background:var(--accent);color:#fff;">TG-7 (OLYMPUS)</button>
+        <button id="sd-tab-flashair" onclick="switchSDTab('flashair')" style="flex:1;padding:8px 4px;border-radius:8px;border:1px solid var(--border);font-size:12px;font-weight:700;cursor:pointer;background:var(--surface2);color:var(--text2);">FlashAir</button>
+      </div>
+      <div id="sd-hint-tg7" style="font-size:12px;color:var(--text2);margin-bottom:12px;">
+        ① TG-7のWi-Fiをオンにする → ② iPadのWi-Fiを「OLYMPUS TG-7 xxxxx」に接続 → ③「接続」をタップ
+      </div>
+      <div id="sd-hint-flashair" style="display:none;font-size:12px;color:var(--text2);margin-bottom:12px;">
         事前にiPadのWi-Fiを「SDカードのネットワーク」に接続してください
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <input id="sd-url-input" type="text" placeholder="例: http://flashair/ または http://192.168.0.1/"
+        <input id="sd-url-input" type="text" placeholder="例: http://192.168.0.10/"
           style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;font-size:12px;"
-          value="http://flashair/">
+          value="http://192.168.0.10/">
         <button onclick="connectSDCard()" style="background:var(--accent);border:none;color:#fff;border-radius:8px;padding:10px 16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">接続</button>
       </div>
       <div id="sd-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;"></div>
@@ -212,11 +220,12 @@
           📸 今回撮影 <span id="popup-count-badge" style="display:none;background:#3b82f6;color:#fff;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:4px;vertical-align:middle;"></span>
         </div>
         <!-- 未撮影表示 -->
-        <div id="popup-current-none" style="background:var(--surface2);border:2px dashed var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="popupCapturePhoto(false)">
-          <div style="text-align:center;color:var(--text2);padding:16px;">
+        <div id="popup-current-none" style="background:var(--surface2);border:2px dashed var(--border);border-radius:8px;overflow:hidden;flex:1;min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;">
+          <div style="text-align:center;color:var(--text2);" onclick="popupCapturePhoto(false)" style="cursor:pointer;">
             <div style="font-size:40px;margin-bottom:8px;">📷</div>
             <div style="font-size:12px;font-weight:600;">タップして撮影</div>
           </div>
+          <button onclick="openSDModalForPopup()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📡 デジカメから取得</button>
         </div>
         <!-- 撮影済み表示（複数枚スライド） -->
         <div id="popup-current-wrap" style="display:none;flex-direction:column;flex:1;min-height:200px;position:relative;background:#000;border-radius:8px;overflow:hidden;">
@@ -234,6 +243,7 @@
           <div style="display:flex;">
             <button onclick="popupCapturePhoto(true)"  style="flex:1;padding:8px 4px;border:none;background:#22c55e;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">📷 追加</button>
             <button onclick="popupCapturePhoto(false)" style="flex:1;padding:8px 4px;border:none;background:#374151;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🔄 撮り直し</button>
+            <button onclick="openSDModalForPopup()"   style="flex:1;padding:8px 4px;border:none;background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">📡 デジカメ</button>
           </div>
         </div>
       </div>
