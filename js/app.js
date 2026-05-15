@@ -36,7 +36,32 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 })();
 
 // ===== APP VERSION =====
-// v1.0.2（2026-05-14）損傷追加機能（引き出し線＋カメラ＋ラベル表示）
+// v1.0.3（2026-05-15）スクロール位置修正・ツールバー長押しサイズ選択
+
+// ===== ツールバー長押しメニュー用CSS注入 =====
+(function injectToolbarCSS() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .tool-has-size { position: relative; padding-top: 16px !important; }
+    .tool-size-label {
+      position: absolute;
+      top: 3px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 9px;
+      color: var(--text2, #94a3b8);
+      pointer-events: none;
+      white-space: nowrap;
+      line-height: 1;
+    }
+    .draw-tool-btn.tool-has-size.active .tool-size-label {
+      color: rgba(255,255,255,0.85);
+    }
+    .tool-size-popup button:active {
+      opacity: 0.7;
+    }
+  `;
+  document.head.appendChild(style);
+})();
 
 // ===== STATE =====
 const state = {
@@ -873,6 +898,7 @@ async function renderCombinedViewer(item, tabs, content) {
       setTimeout(() => renderPhotoLinkButtons(drawKey), 800);
       setTimeout(() => {
         setupToolbarDrag(drawKey);
+        setupToolbarLongPress(drawKey);
         setupPinchZoom(drawKey);
       }, 300);
     }
@@ -1283,6 +1309,8 @@ function popupNav(dir) {
 
 // ===== 共通ツールバーHTML生成 =====
 function buildToolbarHTML(drawKey, pageNum) {
+  // 描画ツールボタン（長押しで太さ・塗りメニュー）を生成するヘルパー
+  // data-* 属性でツール種別を持たせ、setupToolbarLongPress で処理
   return `
     <div class="draw-toolbar" id="toolbar-${drawKey}">
       <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
@@ -1290,33 +1318,40 @@ function buildToolbarHTML(drawKey, pageNum) {
         <button class="draw-toolbar-toggle" onclick="toggleToolbar('${drawKey}')">最小化 ▲</button>
       </div>
       <div class="draw-toolbar-body" id="toolbar-body-${drawKey}">
-        <button class="draw-tool-btn active" id="tool-scroll-${drawKey}"  onclick="setTool('scroll','${drawKey}')">🖐 移動</button>
+        <button class="draw-tool-btn active" id="tool-scroll-${drawKey}" onclick="setTool('scroll','${drawKey}')">🖐 移動</button>
         <span class="draw-toolbar-sep"></span>
-        <button class="draw-tool-btn" id="tool-pen-${drawKey}"     onclick="setTool('pen','${drawKey}')">✏️ ペン</button>
-        <button class="draw-tool-btn" id="tool-line-${drawKey}"    onclick="setTool('line','${drawKey}')">╱ 直線</button>
-        <button class="draw-tool-btn" id="tool-arrow-${drawKey}"   onclick="setTool('arrow','${drawKey}')">→ 引出線</button>
-        <button class="draw-tool-btn" id="tool-rect-${drawKey}"    onclick="toggleRectSquare('${drawKey}')">▭ 長方形</button>
-        <button class="draw-tool-btn" id="tool-ellipse-${drawKey}" onclick="setTool('ellipse','${drawKey}')">◯ 楕円</button>
-        <button class="draw-tool-btn" id="tool-select-${drawKey}"  onclick="setTool('select','${drawKey}')">▷ 選択</button>
+        <button class="draw-tool-btn tool-has-size" id="tool-pen-${drawKey}"
+          data-key="${drawKey}" data-tool="pen" data-has-size="1"
+          onclick="setTool('pen','${drawKey}')">
+          <span class="tool-size-label" id="sizelabel-pen-${drawKey}">0.25</span>✏️ ペン
+        </button>
+        <button class="draw-tool-btn tool-has-size" id="tool-line-${drawKey}"
+          data-key="${drawKey}" data-tool="line" data-has-size="1"
+          onclick="setTool('line','${drawKey}')">
+          <span class="tool-size-label" id="sizelabel-line-${drawKey}">0.25</span>╱ 直線
+        </button>
+        <button class="draw-tool-btn tool-has-size" id="tool-arrow-${drawKey}"
+          data-key="${drawKey}" data-tool="arrow" data-has-size="1"
+          onclick="setTool('arrow','${drawKey}')">
+          <span class="tool-size-label" id="sizelabel-arrow-${drawKey}">0.25</span>→ 引出線
+        </button>
+        <button class="draw-tool-btn tool-has-size" id="tool-rect-${drawKey}"
+          data-key="${drawKey}" data-tool="rect" data-has-size="1" data-has-pattern="1"
+          onclick="toggleRectSquare('${drawKey}')">
+          <span class="tool-size-label" id="sizelabel-rect-${drawKey}">0.25</span>▭ 長方形
+        </button>
+        <button class="draw-tool-btn tool-has-size" id="tool-ellipse-${drawKey}"
+          data-key="${drawKey}" data-tool="ellipse" data-has-size="1" data-has-pattern="1"
+          onclick="setTool('ellipse','${drawKey}')">
+          <span class="tool-size-label" id="sizelabel-ellipse-${drawKey}">0.25</span>◯ 楕円
+        </button>
+        <button class="draw-tool-btn" id="tool-select-${drawKey}" onclick="setTool('select','${drawKey}')">▷ 選択</button>
         <span class="draw-toolbar-sep"></span>
         <button class="color-btn active" style="background:#ef4444" onclick="setColor('#ef4444','${drawKey}',this)"></button>
         <button class="color-btn" style="background:#3b82f6" onclick="setColor('#3b82f6','${drawKey}',this)"></button>
         <button class="color-btn" style="background:#22c55e" onclick="setColor('#22c55e','${drawKey}',this)"></button>
         <button class="color-btn" style="background:#f59e0b" onclick="setColor('#f59e0b','${drawKey}',this)"></button>
         <button class="color-btn" style="background:#ffffff" onclick="setColor('#ffffff','${drawKey}',this)"></button>
-        <span class="draw-toolbar-sep"></span>
-        <button class="size-btn active" id="sz0-${drawKey}" onclick="setSizeMM(0.25,'${drawKey}',this)">0.25</button>
-        <button class="size-btn"        id="sz1-${drawKey}" onclick="setSizeMM(0.5,'${drawKey}',this)">0.5</button>
-        <button class="size-btn"        id="sz2-${drawKey}" onclick="setSizeMM(1.0,'${drawKey}',this)">1.0</button>
-        <button class="size-btn"        id="sz3-${drawKey}" onclick="setSizeMM(1.5,'${drawKey}',this)">1.5</button>
-        <button class="size-btn"        id="sz4-${drawKey}" onclick="setSizeMM(3.0,'${drawKey}',this)">3.0</button>
-        <span style="font-size:10px;color:var(--text2)">mm</span>
-        <span class="draw-toolbar-sep"></span>
-        <span style="font-size:10px;color:var(--text2);white-space:nowrap">塗り:</span>
-        <button class="size-btn active" id="pat-none-${drawKey}"  onclick="setPattern('none','${drawKey}',this)">なし</button>
-        <button class="size-btn"        id="pat-hatch-${drawKey}" onclick="setPattern('hatch','${drawKey}',this)">網掛け</button>
-        <button class="size-btn"        id="pat-diag-${drawKey}"  onclick="setPattern('diag','${drawKey}',this)">斜め線</button>
-        <button class="size-btn"        id="pat-solid-${drawKey}" onclick="setPattern('solid','${drawKey}',this)">塗潰し</button>
         <span class="draw-toolbar-sep"></span>
         <button class="draw-tool-btn" onclick="undoDraw('${drawKey}')">↩ 戻す</button>
         <button class="draw-tool-btn" onclick="deleteSelected('${drawKey}')">🗑 削除</button>
@@ -1325,6 +1360,162 @@ function buildToolbarHTML(drawKey, pageNum) {
         <button class="draw-tool-btn damage-add-btn" id="tool-damageadd-${drawKey}" onclick="setDamageAddMode('${drawKey}')">＋ 損傷追加</button>
       </div>
     </div>`;
+}
+
+// ===== ツールボタン長押し：太さ・塗りメニュー =====
+const SIZE_OPTIONS = [0.25, 0.5, 1.0, 1.5, 3.0];
+const PATTERN_OPTIONS = [
+  { value: 'none',  label: 'なし' },
+  { value: 'hatch', label: '網掛け' },
+  { value: 'diag',  label: '斜め線' },
+  { value: 'solid', label: '塗潰し' },
+];
+
+function setupToolbarLongPress(drawKey) {
+  const body = document.getElementById(`toolbar-body-${drawKey}`);
+  if (!body) return;
+
+  body.querySelectorAll('.tool-has-size').forEach(btn => {
+    let longPressTimer = null;
+    let moved = false;
+
+    const startLongPress = (e) => {
+      moved = false;
+      longPressTimer = setTimeout(() => {
+        if (moved) return;
+        showToolSizeMenu(btn, drawKey);
+      }, 500);
+    };
+    const cancelLongPress = () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    };
+    const onMove = () => { moved = true; cancelLongPress(); };
+
+    btn.addEventListener('touchstart', startLongPress, { passive: true });
+    btn.addEventListener('touchend',   cancelLongPress, { passive: true });
+    btn.addEventListener('touchmove',  onMove, { passive: true });
+    btn.addEventListener('touchcancel', cancelLongPress, { passive: true });
+    // マウス対応（PC確認用）
+    btn.addEventListener('mousedown', startLongPress);
+    btn.addEventListener('mouseup',   cancelLongPress);
+    btn.addEventListener('mousemove', onMove);
+  });
+}
+
+function showToolSizeMenu(btn, key) {
+  // 既存メニューを全削除
+  document.querySelectorAll('.tool-size-popup').forEach(el => el.remove());
+
+  const ds = drawState[key];
+  if (!ds) return;
+
+  const hasPattern = btn.dataset.hasPattern === '1';
+  const rect = btn.getBoundingClientRect();
+
+  const menu = document.createElement('div');
+  menu.className = 'tool-size-popup';
+  menu.style.cssText = `
+    position:fixed; z-index:9999;
+    left:${rect.left}px;
+    top:${rect.bottom + 6}px;
+    background:var(--surface2,#2a2a2a);
+    border:1px solid var(--border,#444);
+    border-radius:12px;
+    padding:8px;
+    box-shadow:0 4px 20px rgba(0,0,0,0.5);
+    display:flex; flex-direction:column; gap:6px;
+    min-width:120px;
+  `;
+
+  // --- 太さセクション ---
+  const sizeLabel = document.createElement('div');
+  sizeLabel.textContent = '線の太さ (mm)';
+  sizeLabel.style.cssText = 'font-size:10px;color:var(--text2,#888);padding:2px 4px;';
+  menu.appendChild(sizeLabel);
+
+  const sizeRow = document.createElement('div');
+  sizeRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
+  SIZE_OPTIONS.forEach(mm => {
+    const b = document.createElement('button');
+    b.textContent = mm;
+    const isActive = ds.sizeMM === mm;
+    b.style.cssText = `
+      padding:6px 10px; font-size:13px; font-weight:700; border-radius:8px; border:none; cursor:pointer;
+      background:${isActive ? 'var(--accent,#3b82f6)' : 'var(--surface,#1e2433)'};
+      color:${isActive ? '#fff' : 'var(--text,#e2e8f0)'};
+    `;
+    b.addEventListener('touchstart', (ev) => {
+      ev.preventDefault(); ev.stopPropagation();
+      setSizeMMByValue(mm, key);
+      menu.remove();
+    }, { passive: false });
+    b.addEventListener('click', () => { setSizeMMByValue(mm, key); menu.remove(); });
+    sizeRow.appendChild(b);
+  });
+  menu.appendChild(sizeRow);
+
+  // --- 塗りセクション（長方形・楕円のみ）---
+  if (hasPattern) {
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:var(--border,#444);margin:2px 0;';
+    menu.appendChild(sep);
+
+    const patLabel = document.createElement('div');
+    patLabel.textContent = '塗り';
+    patLabel.style.cssText = 'font-size:10px;color:var(--text2,#888);padding:2px 4px;';
+    menu.appendChild(patLabel);
+
+    const patRow = document.createElement('div');
+    patRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
+    PATTERN_OPTIONS.forEach(opt => {
+      const b = document.createElement('button');
+      b.textContent = opt.label;
+      const isActive = ds.pattern === opt.value;
+      b.style.cssText = `
+        padding:6px 10px; font-size:12px; font-weight:700; border-radius:8px; border:none; cursor:pointer;
+        background:${isActive ? 'var(--accent,#3b82f6)' : 'var(--surface,#1e2433)'};
+        color:${isActive ? '#fff' : 'var(--text,#e2e8f0)'};
+      `;
+      b.addEventListener('touchstart', (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        setPatternByValue(opt.value, key);
+        menu.remove();
+      }, { passive: false });
+      b.addEventListener('click', () => { setPatternByValue(opt.value, key); menu.remove(); });
+      patRow.appendChild(b);
+    });
+    menu.appendChild(patRow);
+  }
+
+  document.body.appendChild(menu);
+
+  // 画面外タップで閉じる
+  setTimeout(() => {
+    const dismiss = (e) => {
+      if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('touchstart', dismiss); document.removeEventListener('mousedown', dismiss); }
+    };
+    document.addEventListener('touchstart', dismiss, { passive: true });
+    document.addEventListener('mousedown', dismiss);
+  }, 100);
+}
+
+// setSizeMM の値渡し版（ボタン参照不要）
+function setSizeMMByValue(mm, key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.sizeMM = mm;
+  // 全ツールのサイズラベルを更新
+  ['pen','line','arrow','rect','ellipse'].forEach(tool => {
+    const label = document.getElementById(`sizelabel-${tool}-${key}`);
+    if (label) label.textContent = mm;
+  });
+}
+
+// setPattern の値渡し版
+function setPatternByValue(pattern, key) {
+  const ds = drawState[key];
+  if (!ds) return;
+  ds.pattern = pattern;
 }
 
 // ===== ツールバー最小化 =====
@@ -2212,6 +2403,7 @@ function setupDrawCanvas(key, imgData) {
     // ツールバードラッグ・ピンチズームを初期化
     setTimeout(() => {
       setupToolbarDrag(key);
+      setupToolbarLongPress(key);
       setupPinchZoom(key);
     }, 200);
   };
@@ -3376,11 +3568,11 @@ function setColor(color, key, btn) {
 }
 
 function setSizeMM(mm, key, btn) {
-  const ds = drawState[key];
-  if (!ds) return;
-  ds.sizeMM = mm;
-  document.querySelectorAll(`#toolbar-${key} .size-btn`).forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  setSizeMMByValue(mm, key);
+  if (btn) {
+    document.querySelectorAll(`#toolbar-${key} .size-btn`).forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
 }
 
 // ===== Undo =====
