@@ -896,12 +896,7 @@ async function renderCombinedViewer(item, tabs, content) {
 
       const imgData = await getPageImage(p);
       if (imgData) setupDrawCanvas(drawKey, imgData);
-      setTimeout(() => renderPhotoLinkButtons(drawKey), 800);
-      setTimeout(() => {
-        setupToolbarDrag(drawKey);
-        setupToolbarLongPress(drawKey);
-        setupPinchZoom(drawKey);
-      }, 300);
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 300);
     }
 
     innerTabs.appendChild(tempSaveBtn);
@@ -953,7 +948,7 @@ async function renderDrawViewer(item, tabs, content) {
 
     // その10の写真番号ボタンを生成（s9のみ）
     if (item.key === 's9') {
-      setTimeout(() => renderPhotoLinkButtons(drawKey), 500);
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 300);
     }
   }
 }
@@ -2355,11 +2350,14 @@ function setupDrawCanvas(key, imgData) {
       const rect = baseImg.getBoundingClientRect();
       const dpr  = window.devicePixelRatio;
 
-      // rectが0の場合は再試行（まだレイアウト未確定）
+      // rectが0の場合は再試行（まだレイアウト未確定、最大10回）
       if (rect.width === 0) {
-        setTimeout(() => resizeCanvas(fromResize), 100);
+        if ((resizeCanvas._retryCount = (resizeCanvas._retryCount || 0) + 1) <= 10) {
+          setTimeout(() => resizeCanvas(fromResize), 100);
+        }
         return;
       }
+      resizeCanvas._retryCount = 0;
 
       // fromResizeかつズームのみ（panなし）の場合、Canvasサイズをズームを考慮して計算
       let canvasW = rect.width;
@@ -2409,7 +2407,13 @@ function setupDrawCanvas(key, imgData) {
       }
     };
     setTimeout(tryResizeCanvas, 100);
-    window.addEventListener('resize', () => resizeCanvas(true));
+
+    // resizeリスナーは1つだけ登録（再呼び出し時の蓄積防止）
+    if (container._resizeHandler) {
+      window.removeEventListener('resize', container._resizeHandler);
+    }
+    container._resizeHandler = () => resizeCanvas(true);
+    window.addEventListener('resize', container._resizeHandler);
 
     setupDrawEvents(canvas, svg, key);
 
