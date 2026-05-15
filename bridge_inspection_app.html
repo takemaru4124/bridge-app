@@ -10,13 +10,10 @@
 <meta name="apple-mobile-web-app-title" content="橋梁点検">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
-  // Service Workerを全て登録解除してキャッシュをクリア
+  // Service Worker登録（network-first／オフライン対応）
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(regs => {
-      regs.forEach(reg => reg.unregister());
-    });
-    caches.keys().then(keys => {
-      keys.forEach(key => caches.delete(key));
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.warn('SW登録失敗:', err);
     });
   }
 </script>
