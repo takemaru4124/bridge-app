@@ -39,7 +39,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 // v1.0.3（2026-05-15）スクロール位置修正・ツールバー長押しサイズ選択
 
 // ===== ツールバー長押しメニュー用CSS注入 =====
-function injectToolbarCSS() {
+(function injectToolbarCSS() {
   const style = document.createElement('style');
   style.textContent = `
     .tool-has-size { position: relative; padding-top: 16px !important; }
@@ -61,8 +61,7 @@ function injectToolbarCSS() {
     }
   `;
   document.head.appendChild(style);
-}
-document.addEventListener('DOMContentLoaded', injectToolbarCSS);
+})();
 
 // ===== STATE =====
 const state = {
@@ -82,8 +81,6 @@ const state = {
   extraPhotos: [],
   currentSection: null,
   currentPhotoTarget: null,
-  // 担当区分: 'A'（左側）| 'B'（右側）| null（未設定）
-  role: null,
 };
 
 // ===== メニュー定義（mapKeyでページを動的解決）=====
@@ -898,7 +895,12 @@ async function renderCombinedViewer(item, tabs, content) {
 
       const imgData = await getPageImage(p);
       if (imgData) setupDrawCanvas(drawKey, imgData);
-      setTimeout(() => renderPhotoLinkButtons(drawKey), 300);
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 800);
+      setTimeout(() => {
+        setupToolbarDrag(drawKey);
+        setupToolbarLongPress(drawKey);
+        setupPinchZoom(drawKey);
+      }, 300);
     }
 
     innerTabs.appendChild(tempSaveBtn);
@@ -950,7 +952,7 @@ async function renderDrawViewer(item, tabs, content) {
 
     // その10の写真番号ボタンを生成（s9のみ）
     if (item.key === 's9') {
-      setTimeout(() => renderPhotoLinkButtons(drawKey), 300);
+      setTimeout(() => renderPhotoLinkButtons(drawKey), 500);
     }
   }
 }
@@ -1000,15 +1002,10 @@ async function renderPhotoLinkButtons(drawKey) {
 
     spanSlots.forEach(slot => {
       const btn = document.createElement('button');
-      const photoList = normalizePhotoList(state.photos?.[slot.key]);
-      const hasPhoto  = photoList.length > 0;
-      const roleClass = _getPhotoRoleClass(photoList);
-      const roleColor = roleClass === 'role-A' ? '#3b82f6' : roleClass === 'role-B' ? '#f97316' : null;
-      const borderColor = hasPhoto ? (roleColor || 'var(--green)') : 'var(--border)';
-      const bgColor     = hasPhoto ? (roleColor || 'var(--green)') : 'var(--surface)';
+      const hasPhoto = !!state.photos?.[slot.key];
       btn.style.cssText = `
-        background:${bgColor};
-        border:2px solid ${borderColor};
+        background:${hasPhoto ? 'var(--green)' : 'var(--surface)'};
+        border:1px solid ${hasPhoto ? 'var(--green)' : 'var(--border)'};
         color:${hasPhoto ? '#fff' : 'var(--text)'};
         border-radius:8px; padding:8px 12px; font-size:12px;
         font-weight:700; cursor:pointer; white-space:nowrap;
@@ -1127,7 +1124,14 @@ let _popupPhotoIdx = 0;
 
 function popupCapturePhoto(addMode) {
   if (!_popupSlotKey) return;
-  // 競合防止：新規input生成方式
+
+  // TG-7モードがオンの場合はデジカメ待機へ
+  if (_tg7ModeOn) {
+    popupCapturePhotoTG7(addMode);
+    return;
+  }
+
+  // 通常：iPadカメラを起動（競合防止：新規input生成方式）
   const old = document.getElementById('popup-camera-input-dyn');
   if (old) old.remove();
   const input = document.createElement('input');
@@ -1143,7 +1147,7 @@ function popupCapturePhoto(addMode) {
     reader.onload = (ev) => {
       if (!state.photos) state.photos = {};
       compressImage(ev.target.result, 0.75, 1280).then(compressed => {
-        const newEntry = { dataURL: compressed, label: '', role: state.role || null };
+        const newEntry = { dataURL: compressed, label: '' };
         const existing = state.photos[_popupSlotKey];
         if (addMode && Array.isArray(existing)) {
           existing.push(newEntry);
@@ -1438,13 +1442,10 @@ function showToolSizeMenu(btn, key) {
 
   const sizeRow = document.createElement('div');
   sizeRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;';
-  // 現在ツール固有の太さを取得（sizeByToolがあればそこから）
-  const toolKey = btn.dataset.tool === 'square' ? 'rect' : btn.dataset.tool;
-  const currentSize = ds.sizeByTool ? (ds.sizeByTool[toolKey] ?? ds.sizeMM) : ds.sizeMM;
   SIZE_OPTIONS.forEach(mm => {
     const b = document.createElement('button');
     b.textContent = mm;
-    const isActive = currentSize === mm;
+    const isActive = ds.sizeMM === mm;
     b.style.cssText = `
       padding:6px 10px; font-size:13px; font-weight:700; border-radius:8px; border:none; cursor:pointer;
       background:${isActive ? 'var(--accent,#3b82f6)' : 'var(--surface,#1e2433)'};
@@ -1505,24 +1506,16 @@ function showToolSizeMenu(btn, key) {
   }, 100);
 }
 
-// setSizeMM の値渡し版：現在のツールのみ太さを更新
+// setSizeMM の値渡し版（ボタン参照不要）
 function setSizeMMByValue(mm, key) {
   const ds = drawState[key];
   if (!ds) return;
-  // 現在のツールに対応するsizeByToolキーを特定
-  const tool = ds.tool === 'square' ? 'rect' : ds.tool;
-  if (!ds.sizeByTool) ds.sizeByTool = { pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 };
-  // 現在のツールのみ更新
-  if (ds.sizeByTool.hasOwnProperty(tool)) {
-    ds.sizeByTool[tool] = mm;
-    if (tool === 'rect') ds.sizeByTool.square = mm; // rect/squareは同期
-  }
-  // sizeMM は現在ツールの値を反映
   ds.sizeMM = mm;
-  // 現在ツールのラベルのみ更新
-  const labelTool = (ds.tool === 'square') ? 'rect' : ds.tool;
-  const label = document.getElementById(`sizelabel-${labelTool}-${key}`);
-  if (label) label.textContent = mm;
+  // 全ツールのサイズラベルを更新
+  ['pen','line','arrow','rect','ellipse'].forEach(tool => {
+    const label = document.getElementById(`sizelabel-${tool}-${key}`);
+    if (label) label.textContent = mm;
+  });
 }
 
 // setPattern の値渡し版
@@ -2331,7 +2324,6 @@ function setupDrawCanvas(key, imgData) {
     if (!drawState[key]) {
       drawState[key] = {
         tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
-        sizeByTool:{ pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 },
         penHistory:[], penStrokes:[], objects:[], selectedId:null, clipboard:null,
         drawing:false, startX:0, startY:0, savedPenData:null
       };
@@ -2357,14 +2349,11 @@ function setupDrawCanvas(key, imgData) {
       const rect = baseImg.getBoundingClientRect();
       const dpr  = window.devicePixelRatio;
 
-      // rectが0の場合は再試行（まだレイアウト未確定、最大10回）
+      // rectが0の場合は再試行（まだレイアウト未確定）
       if (rect.width === 0) {
-        if ((resizeCanvas._retryCount = (resizeCanvas._retryCount || 0) + 1) <= 10) {
-          setTimeout(() => resizeCanvas(fromResize), 100);
-        }
+        setTimeout(() => resizeCanvas(fromResize), 100);
         return;
       }
-      resizeCanvas._retryCount = 0;
 
       // fromResizeかつズームのみ（panなし）の場合、Canvasサイズをズームを考慮して計算
       let canvasW = rect.width;
@@ -2414,13 +2403,7 @@ function setupDrawCanvas(key, imgData) {
       }
     };
     setTimeout(tryResizeCanvas, 100);
-
-    // resizeリスナーは1つだけ登録（再呼び出し時の蓄積防止）
-    if (container._resizeHandler) {
-      window.removeEventListener('resize', container._resizeHandler);
-    }
-    container._resizeHandler = () => resizeCanvas(true);
-    window.addEventListener('resize', container._resizeHandler);
+    window.addEventListener('resize', () => resizeCanvas(true));
 
     setupDrawEvents(canvas, svg, key);
 
@@ -3451,22 +3434,8 @@ function setTool(tool, key) {
   const rectBtn = document.getElementById(`tool-rect-${key}`);
   if (rectBtn) {
     rectBtn.classList.toggle('active', tool === 'rect' || tool === 'square');
-    // textContentだとspanごと消えるのでinnerHTMLで更新
-    const rectLabel = document.getElementById(`sizelabel-rect-${key}`);
-    const rectSizeTxt = rectLabel ? rectLabel.outerHTML : '<span class="tool-size-label" id="sizelabel-rect-' + key + '">0.25</span>';
-    rectBtn.innerHTML = rectSizeTxt + (tool === 'square' ? '■ 正方形' : '▭ 長方形');
+    rectBtn.textContent = tool === 'square' ? '■ 正方形' : '▭ 長方形';
   }
-  // ツール切り替え時にそのツールの太さをsizeMMに反映し、ラベルも更新
-  if (!ds.sizeByTool) ds.sizeByTool = { pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 };
-  const sizeKey = tool === 'square' ? 'rect' : tool;
-  if (ds.sizeByTool.hasOwnProperty(sizeKey)) {
-    ds.sizeMM = ds.sizeByTool[sizeKey];
-    // ラベル表示を更新（rect/squareは同じボタン）
-    const labelTool = (tool === 'square') ? 'rect' : tool;
-    const label = document.getElementById(`sizelabel-${labelTool}-${key}`);
-    if (label) label.textContent = ds.sizeMM;
-  }
-
   const canvas = document.getElementById(`drawcanvas-${key}`);
   if (canvas) {
     canvas.style.cursor = tool === 'select' ? 'default'
@@ -3879,15 +3848,6 @@ async function saveWorkData() {
   }
   showToast('💾 保存中...', '');
   try {
-    // 担当区分を選択（未設定の場合のみ確認）
-    if (!state.role) {
-      const choice = confirm(
-        '担当区分を選択してください\n\n' +
-        '【OK】 → A（橋の左側）\n' +
-        '【キャンセル】 → B（橋の右側）'
-      );
-      state.role = choice ? 'A' : 'B';
-    }
     // 全キャンバスのペンデータを収集
     for (const key of Object.keys(drawState)) {
       const ds = drawState[key];
@@ -3934,7 +3894,6 @@ async function saveWorkData() {
       version:   '1.4.6',
       savedAt:   new Date().toISOString(),
       pdfName:   state.pdfName || '橋梁点検',
-      role:      state.role || null,
       photos:    compressedPhotos,
       extraPhotos: state.extraPhotos || [],
       drawings:  state.drawings || {},
@@ -3961,8 +3920,7 @@ async function saveWorkData() {
 
     const now     = new Date();
     const dateStr = `${now.getMonth()+1}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-    const rolePart = state.role ? `_担当${state.role}` : '';
-    const fileName = `${state.pdfName || '点検データ'}${rolePart}_作業保存_${dateStr}.zip`;
+    const fileName = `${state.pdfName || '点検データ'}_作業保存_${dateStr}.zip`;
 
     showToast('📦 ZIP生成中...', '');
     const blob = await zip.generateAsync({ type: 'blob' });
@@ -4120,12 +4078,10 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   const photoCount   = Object.keys(data.photos   || {}).length;
   const drawingCount = Object.keys(data.drawState || data.drawings || {}).length;
   const hasPDF = !!(pdfArrayBuffer || pdfBase64);
-  const roleLabel = data.role === 'A' ? '担当A（左側）' : data.role === 'B' ? '担当B（右側）' : '未設定';
 
   const ok = confirm(
     `📥 データを取り込みます\n\n` +
     `・橋梁名：${data.pdfName || '不明'}\n` +
-    `・担当：${roleLabel}\n` +
     `・撮影写真：${photoCount}枚\n` +
     `・書き込みデータ：${drawingCount}ページ\n` +
     `・PDF：${hasPDF ? '含む（自動復元）' : 'なし'}\n\n` +
@@ -4133,32 +4089,9 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   );
   if (!ok) return;
 
-  // 写真を統合（スロットごとに配列結合・dataURL重複除去）
-  for (const [key, raw] of Object.entries(data.photos || {})) {
-    const incoming = Array.isArray(raw) ? raw : (raw?.dataURL ? [raw] : (typeof raw === 'string' && raw ? [{ dataURL: raw }] : []));
-    if (!incoming.length) continue;
-    // incomingにロール情報を付与
-    const tagged = incoming.map(p => ({ ...p, role: data.role || null }));
-    const existing = state.photos[key];
-    if (!existing) {
-      state.photos[key] = tagged;
-    } else {
-      const existList = Array.isArray(existing) ? existing : (existing?.dataURL ? [existing] : (typeof existing === 'string' ? [{ dataURL: existing }] : []));
-      const existURLs = new Set(existList.map(p => p.dataURL));
-      const newItems  = tagged.filter(p => !existURLs.has(p.dataURL));
-      state.photos[key] = [...existList, ...newItems];
-    }
-  }
-
-  // extraPhotosを統合（id重複除去・ロール情報付与）
-  const existingIds = new Set((state.extraPhotos || []).map(p => p.id));
-  const incomingExtra = (data.extraPhotos || [])
-    .filter(p => !existingIds.has(p.id))
-    .map(p => ({ ...p, role: data.role || null }));
-  state.extraPhotos = [...(state.extraPhotos || []), ...incomingExtra];
-
-  // drawingsを統合
-  Object.assign(state.drawings, data.drawings || {});
+  // 写真・書き込みを統合
+  Object.assign(state.photos,   data.photos   || {});
+  Object.assign(state.drawings, data.drawings  || {});
 
   // drawStateを復元
   if (data.drawState) {
@@ -4166,7 +4099,6 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
       if (!drawState[key]) {
         drawState[key] = {
           tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
-          sizeByTool:{ pen:0.25, line:0.25, arrow:0.25, rect:0.25, square:0.25, ellipse:0.25 },
           penHistory:[], penStrokes:[], objects:[], selectedId:null, clipboard:null,
           drawing:false, startX:0, startY:0, savedPenData:null, history:[]
         };
@@ -4257,6 +4189,132 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
 let _sdSelectedPhotoURL = null;
 let _sdCurrentTab = 'tg7';        // 'tg7' | 'flashair'
 let _sdFromPopup  = false;        // ポップアップから呼ばれたか
+
+// ===== TG-7モード =====
+let _tg7ModeOn       = false;     // TG-7モードのオン/オフ
+let _tg7PollingTimer = null;      // ポーリングタイマー
+let _tg7KnownFiles   = new Set(); // 既知のファイル名セット
+let _tg7WaitingSlot  = null;      // 待機中のスロットキー
+let _tg7BaseURL      = 'http://192.168.0.10';
+
+function toggleTG7Mode() {
+  _tg7ModeOn = !_tg7ModeOn;
+  const btn = document.getElementById('tg7-mode-btn');
+  if (_tg7ModeOn) {
+    // 接続URLを確認してポーリング開始
+    _tg7BaseURL = (document.getElementById('sd-url-input')?.value || 'http://192.168.0.10').trim().replace(/\/$/, '');
+    btn.textContent = '📷 TG-7 ON';
+    btn.style.background = 'var(--accent)';
+    btn.style.border = 'none';
+    showToast('TG-7モード ON：撮影ボタンを押してデジカメで撮影してください', 'success');
+    _tg7StartPolling();
+  } else {
+    _tg7StopPolling();
+    btn.textContent = '📷 TG-7 OFF';
+    btn.style.background = 'rgba(255,255,255,0.15)';
+    btn.style.border = '1px solid rgba(255,255,255,0.4)';
+    _tg7WaitingSlot = null;
+    showToast('TG-7モード OFF', 'info');
+  }
+}
+
+// ポーリング開始：既存ファイルを記録してから新着監視
+async function _tg7StartPolling() {
+  // 既存ファイルを初期スキャンして既知セットに登録
+  try {
+    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
+    if (photos) photos.forEach(p => _tg7KnownFiles.add(p.name));
+  } catch(e) {}
+
+  _tg7PollingTimer = setInterval(_tg7Poll, 4000); // 4秒ごと
+}
+
+function _tg7StopPolling() {
+  if (_tg7PollingTimer) {
+    clearInterval(_tg7PollingTimer);
+    _tg7PollingTimer = null;
+  }
+}
+
+async function _tg7Poll() {
+  if (!_tg7ModeOn || !_tg7WaitingSlot) return;
+  try {
+    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
+    if (!photos) return;
+    const newPhotos = photos.filter(p => !_tg7KnownFiles.has(p.name));
+    if (newPhotos.length === 0) return;
+
+    // 最新の1枚を取り込み
+    const latest = newPhotos[newPhotos.length - 1];
+    _tg7KnownFiles.add(latest.name);
+    await _importSDPhotoToSlot(latest.url, latest.name, _tg7WaitingSlot);
+    _tg7WaitingSlot = null; // 待機解除
+  } catch(e) {}
+}
+
+// TG-7モード時の撮影ボタン処理
+function popupCapturePhotoTG7(addMode) {
+  if (!_popupSlotKey) return;
+  _tg7WaitingSlot = _popupSlotKey;
+
+  // ポップアップの「撮影エリア」に待機中UIを表示
+  const noneEl = document.getElementById('popup-current-none');
+  if (noneEl) {
+    noneEl.innerHTML = `
+      <div style="text-align:center;color:var(--accent);padding:20px;">
+        <div style="font-size:36px;margin-bottom:8px;">📷</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px;">TG-7で撮影してください</div>
+        <div style="font-size:11px;color:var(--text2);">撮影後、自動で取り込みます...</div>
+        <div style="margin-top:12px;width:24px;height:24px;border:3px solid var(--accent);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin:12px auto 0;"></div>
+      </div>
+      <button onclick="_tg7CancelWait()" style="margin-top:8px;background:none;border:1px solid var(--border);color:var(--text2);border-radius:8px;padding:6px 14px;font-size:11px;cursor:pointer;">キャンセル</button>
+    `;
+  }
+  showToast('📷 TG-7で撮影してください', 'info');
+}
+
+function _tg7CancelWait() {
+  _tg7WaitingSlot = null;
+  // ポップアップを再描画
+  const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+  const slot  = slots.find(s => s.key === _popupSlotKey);
+  if (slot) updatePopup(slot);
+}
+
+// 指定スロットに写真を取り込む共通関数
+async function _importSDPhotoToSlot(url, name, slotKey) {
+  try {
+    const resp = await fetch(url, { mode: 'cors' });
+    const blob = await resp.blob();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      compressImage(e.target.result, 0.75, 1280).then(compressed => {
+        if (!state.photos) state.photos = {};
+        const newEntry = { dataURL: compressed, label: '' };
+        const existing = state.photos[slotKey];
+        if (Array.isArray(existing)) {
+          existing.push(newEntry);
+          _popupPhotoIdx = existing.length - 1;
+        } else if (existing) {
+          const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
+          state.photos[slotKey] = [prev, newEntry];
+          _popupPhotoIdx = 1;
+        } else {
+          state.photos[slotKey] = [newEntry];
+          _popupPhotoIdx = 0;
+        }
+        const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
+        const slot  = slots.find(s => s.key === slotKey);
+        if (slot) updatePopup(slot);
+        _refreshPhotoGrid(slotKey);
+        showToast(`✅ ${name} を取り込みました`, 'success');
+      });
+    };
+    reader.readAsDataURL(blob);
+  } catch(err) {
+    showToast('❌ 取り込み失敗。TG-7との接続を確認してください', 'error');
+  }
+}
 
 // ポップアップから「デジカメから取得」を押したとき
 function openSDModalForPopup() {
@@ -4479,7 +4537,7 @@ function selectSDPhoto(url, name, el) {
 
   if (_sdFromPopup) {
     // ポップアップ経由：確認なしで即取り込み
-    _importSDPhotoToPopup(url, name);
+    _importSDPhotoToSlot(url, name, _popupSlotKey);
   } else {
     document.getElementById('sd-assign-panel').style.display = 'block';
     document.getElementById('sd-status').textContent = `✅ 「${name}」を選択中`;
@@ -4487,47 +4545,6 @@ function selectSDPhoto(url, name, el) {
 }
 
 // ポップアップスロットへ直接取り込み
-async function _importSDPhotoToPopup(url, name) {
-  const status = document.getElementById('sd-status');
-  status.textContent = '🔄 取り込み中...';
-  status.style.color = 'var(--text2)';
-  try {
-    const resp = await fetch(url, { mode: 'cors' });
-    const blob = await resp.blob();
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      compressImage(e.target.result, 0.75, 1280).then(compressed => {
-        if (!state.photos) state.photos = {};
-        const newEntry = { dataURL: compressed, label: '' };
-        const existing = state.photos[_popupSlotKey];
-        if (Array.isArray(existing)) {
-          existing.push(newEntry);
-          _popupPhotoIdx = existing.length - 1;
-        } else if (existing) {
-          const prev = typeof existing === 'string' ? { dataURL: existing } : existing;
-          state.photos[_popupSlotKey] = [prev, newEntry];
-          _popupPhotoIdx = 1;
-        } else {
-          state.photos[_popupSlotKey] = [newEntry];
-          _popupPhotoIdx = 0;
-        }
-        closeSDModal();
-        const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
-        const slot  = slots.find(s => s.key === _popupSlotKey);
-        if (slot) updatePopup(slot);
-        _refreshPhotoGrid(_popupSlotKey);
-        showToast(`✅ ${name} を取り込みました`, 'success');
-      });
-    };
-    reader.readAsDataURL(blob);
-  } catch(err) {
-    status.textContent = '❌ 取り込み失敗。再度タップしてください';
-    status.style.color = 'var(--red)';
-  }
-}
-
-async function assignSDPhoto() {
-  if (!_sdSelectedPhotoURL) return;
   const slotKey = document.getElementById('sd-slot-select').value;
   if (!slotKey) return;
 
@@ -4857,16 +4874,6 @@ function normalizePhotoList(raw) {
   return [];
 }
 
-// 写真リストから担当色クラスを返す（A優先・混在はAを表示）
-function _getPhotoRoleClass(photoList) {
-  if (!photoList || !photoList.length) return '';
-  const roles = photoList.map(p => p.role).filter(Boolean);
-  if (!roles.length) return '';
-  if (roles.includes('A')) return 'role-A';
-  if (roles.includes('B')) return 'role-B';
-  return '';
-}
-
 function renderPhotoSlot(slot, sectionKey) {
   const photoRaw  = state.photos[slot.key];
   const photoList = normalizePhotoList(photoRaw);
@@ -4877,9 +4884,6 @@ function renderPhotoSlot(slot, sectionKey) {
   const nonBadge   = slot.isNON   ? '<span class="photo-card-badge-non">NON</span>'  : '';
   const countBadge = hasPhoto && photoList.length > 1
     ? `<span class="photo-card-badge-count">${photoList.length}枚</span>` : '';
-  const roleCls    = hasPhoto ? _getPhotoRoleClass(photoList) : '';
-  const roleBadge  = roleCls === 'role-A' ? '<span class="role-badge">担当A</span>'
-                   : roleCls === 'role-B' ? '<span class="role-badge">担当B</span>' : '';
   const statusHTML = hasPhoto
     ? `<span class="photo-card-status done">✓ 撮影済</span>`
     : `<span class="photo-card-status">未撮影</span>`;
@@ -4921,9 +4925,9 @@ function renderPhotoSlot(slot, sectionKey) {
     : `<div class="photo-half-noprev"><span>—</span><p>前回写真なし</p></div>`;
 
   return `
-    <div class="photo-card${photoList.length > 0 ? (' ' + _getPhotoRoleClass(photoList)) : ''}" data-slot="${slot.key}" data-section="${sectionKey}"${photoList.length > 0 ? (' style="border-color:var(--role-color,var(--border));box-shadow:0 0 0 1.5px var(--role-color,transparent);"') : ''}>
+    <div class="photo-card" data-slot="${slot.key}" data-section="${sectionKey}">
       <div class="photo-card-header">
-        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}${countBadge}${roleBadge}</div>
+        <div class="photo-card-title">${slot.label} ${reqBadge}${nonBadge}${countBadge}</div>
         ${statusHTML}
       </div>
       <div class="photo-pair">
@@ -5088,7 +5092,7 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
 
     // 複数枚対応：配列で管理（圧縮してからメモリに保存）
     compressImage(ev.target.result, 0.75, 1280).then(compressed => {
-    const newEntry = { dataURL: compressed, label: slot.label, role: state.role || null };
+    const newEntry = { dataURL: compressed, label: slot.label };
     const existing = state.photos[slot.key];
     if (addMode && Array.isArray(existing)) {
       existing.push(newEntry);
@@ -5874,7 +5878,7 @@ function saveExtraPhoto(sectionKey, dataURL) {
 
   const id = 'extra_' + Date.now();
   if (!state.extraPhotos) state.extraPhotos = [];
-  state.extraPhotos.push({ id, sectionKey, dataURL, info, role: state.role || null });
+  state.extraPhotos.push({ id, sectionKey, dataURL, info });
 
   // 損傷追加モード経由の場合、引き出し線にラベルを付与
   if (!isS3 && _damageAddDrawKey) {
@@ -5949,16 +5953,12 @@ function renderExtraPhotoGrid(sectionKey, appendOnly = false) {
     const memo   = p.info.memo ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${p.info.memo}</div>` : '';
     const div = document.createElement('div');
     div.dataset.photoId = p.id;
-    const roleClass = p.role === 'A' ? 'role-A' : p.role === 'B' ? 'role-B' : '';
-    const roleBorderColor = p.role === 'A' ? '#3b82f6' : p.role === 'B' ? '#f97316' : 'var(--border)';
-    const roleBadgeHTML = p.role ? `<span class="role-badge" style="background:${p.role === 'A' ? '#3b82f6' : '#f97316'};color:#fff;">担当${p.role}</span>` : '';
-    div.className = roleClass;
-    div.style.cssText = `background:var(--surface2);border:2px solid ${roleBorderColor};border-radius:8px;overflow:hidden;position:relative;`;
+    div.style.cssText = 'background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden;position:relative;';
     div.innerHTML = `
       <img src="${p.dataURL}" style="width:100%;aspect-ratio:4/3;object-fit:cover;display:block;" onclick="openExtraPhotoLightbox('${p.id}')">
       <button onclick="deleteExtraPhoto('${p.id}','${sectionKey}')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:24px;height:24px;font-size:12px;cursor:pointer;">✕</button>
       <div style="padding:6px 8px;">
-        <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}${roleBadgeHTML}</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text);">${label}${spanBadge}</div>
         ${memo}
       </div>`;
     return div;
@@ -5994,16 +5994,6 @@ function openExtraPhotoLightbox(id) {
 (function injectMultiPhotoStyles() {
   const style = document.createElement('style');
   style.textContent = `
-    /* 担当色 A=青系 B=橙系 */
-    .role-A { --role-color: #3b82f6; --role-bg: rgba(59,130,246,0.12); }
-    .role-B { --role-color: #f97316; --role-bg: rgba(249,115,22,0.12); }
-    .role-badge {
-      display:inline-block; font-size:10px; font-weight:700;
-      border-radius:6px; padding:1px 6px; margin-left:4px; vertical-align:middle;
-    }
-    .role-A .role-badge { background:#3b82f6; color:#fff; }
-    .role-B .role-badge { background:#f97316; color:#fff; }
-
     /* 枚数バッジ */
     .photo-card-badge-count {
       display:inline-block; background:#3b82f6; color:#fff;
