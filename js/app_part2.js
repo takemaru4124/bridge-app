@@ -1611,16 +1611,16 @@ let _sdCurrentTab = 'tg7';        // 'tg7' | 'flashair'
 let _sdFromPopup  = false;        // ポップアップから呼ばれたか
 
 // ===== TG-7モード =====
-let _tg7ModeOn       = false;     // TG-7モードのオン/オフ
+window._tg7ModeOn    = false;     // TG-7モードのオン/オフ
 let _tg7PollingTimer = null;      // ポーリングタイマー
 let _tg7KnownFiles   = new Set(); // 既知のファイル名セット
 let _tg7WaitingSlot  = null;      // 待機中のスロットキー
 let _tg7BaseURL      = 'http://192.168.0.10';
 
 function toggleTG7Mode() {
-  _tg7ModeOn = !_tg7ModeOn;
+  window._tg7ModeOn = !window._tg7ModeOn;
   const btn = document.getElementById('tg7-mode-btn');
-  if (_tg7ModeOn) {
+  if (window._tg7ModeOn) {
     _tg7BaseURL = (document.getElementById('sd-url-input')?.value || 'http://192.168.0.10').trim().replace(/\/$/, '');
     btn.textContent = '📷 TG-7 ON';
     btn.style.background = 'var(--accent)';
@@ -1654,7 +1654,7 @@ function _tg7StopPolling() {
 }
 
 async function _tg7Poll() {
-  if (!_tg7ModeOn || !_tg7WaitingSlot) return;
+  if (!window._tg7ModeOn || !_tg7WaitingSlot) return;
   try {
     const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
     if (!photos) return;
