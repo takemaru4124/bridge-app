@@ -1832,7 +1832,7 @@ async function connectSDCard() {
       img.crossOrigin = 'anonymous';
       img.onload = () => {
         div.innerHTML = '';
-        img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+        img.style.cssText = 'width:100%;height:100%;object-fit:cover;pointer-events:none;';
         div.appendChild(img);
       };
       img.src = photo.url;
