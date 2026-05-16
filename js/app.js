@@ -85,13 +85,10 @@ const MENU_INSPECT_EXTRA = [
 const MENU_SURVEY  = MENU_SURVEY_BASE;
 const MENU_INSPECT = [...MENU_SURVEY_BASE, ...MENU_INSPECT_EXTRA];
 
-
 // ===== 写真スロット（動的生成）=====
-// PDF読み込み後にbuildPhotoSlotsFromPDFで生成される
 let SURVEY_PHOTO_SLOTS = [];
 let DAMAGE_PHOTO_SLOTS = [];
 
-// PDFのテキストから写真番号・部材名・ページを抽出してスロットを生成
 async function buildPhotoSlotsFromPDF(pdf, pageMap) {
   SURVEY_PHOTO_SLOTS = [];
   DAMAGE_PHOTO_SLOTS = [];
@@ -105,7 +102,6 @@ async function buildPhotoSlotsFromPDF(pdf, pageMap) {
   SURVEY_PHOTO_SLOTS.sort((a, b) => a.prevNo - b.prevNo);
 
   // === その１０ 損傷写真（全ページ一括マッチング）===
-  // その10はページをまたいで写真番号テキストと画像が対応するため一括処理
   const s10Pages = pageMap['s10'] || [];
   const damageSlots = await extractPhotoSlotsMultiPage(pdf, s10Pages, 'd');
   DAMAGE_PHOTO_SLOTS.push(...damageSlots);
@@ -113,11 +109,9 @@ async function buildPhotoSlotsFromPDF(pdf, pageMap) {
   DAMAGE_PHOTO_SLOTS.forEach(s => { s.isNON = s.prevNo >= 1000; });
 }
 
-// 複数ページをまとめて処理（ページをまたいだマッチングに対応）
 async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
   if (pageNums.length === 0) return [];
 
-  // 全ページから写真番号テキストと画像座標を収集
   const allEntries = [];
   const allImages  = [];
 
@@ -133,14 +127,11 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
       .map(i => ({ str: i.str.trim(), x: i.transform[4], y: H - i.transform[5] }))
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
-    // 写真番号エントリ収集（径間番号も取得）
-    // まずページヘッダ（上部ty<0.15）から径間番号を取得（最も確実）
     let pageSpan = 1;
     for (let i = 0; i < items.length; i++) {
       if (items[i].str.replace(/\s/g, '') === '径間番号' && items[i].y / H < 0.15) {
         const spanLabelX = items[i].x;
         const spanLabelY = items[i].y;
-        // 同じy座標付近（y差5%以内）かつ右側にある最も近い数字を採用
         let bestX = 9999, bestVal = null;
         for (let j = 0; j < items.length; j++) {
           if (j === i) continue;
@@ -163,7 +154,6 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
         const tx = items[i].x / W;
         const ty = items[i].y / H;
 
-        // x方向で右隣にある最も近い数字を採用
         let foundNo = null;
         let bestXDist = 9999;
         for (let j = 0; j < items.length; j++) {
@@ -188,18 +178,15 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
       }
     }
 
-    // 画像座標収集
     const imgCoords = await getPageImageCoords(page, W, H);
     for (const img of imgCoords) {
       allImages.push({ ...img, globalY: pi + img.y, pnum });
     }
   }
 
-  // globalY順でソート
   allEntries.sort((a, b) => a.globalY - b.globalY || a.tx - b.tx);
   allImages.sort((a, b) => a.globalY - b.globalY || a.x - b.x);
 
-  // 径間番号ごとに分けてマッチング
   const spans = [...new Set(allEntries.map(e => e.span))].sort((a,b) => a-b);
   const used  = new Set();
   const slots = [];
@@ -208,7 +195,6 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
     const spanEntries = allEntries.filter(e => e.span === span);
     const spanImages  = allImages.filter((img, idx) => !used.has(idx));
 
-    // 同じ径間のエントリと未使用画像でマッチング
     const localUsed = new Set();
 
     for (const entry of spanEntries) {
@@ -218,10 +204,8 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
         if (used.has(idx) || localUsed.has(idx)) continue;
         const img = allImages[idx];
 
-        // 同じ列か（x差0.12以内）
         if (Math.abs(img.x - entry.tx) >= 0.12) continue;
 
-        // globalY差（1ページ分以内）
         const dy = Math.abs(img.globalY - entry.globalY);
         if (dy > 1.0) continue;
 
@@ -233,7 +217,6 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
         localUsed.add(best);
         const img = allImages[best];
 
-        // 同列・直下に隣接する画像があれば高さを合算（市町村版など1スロットが上下2枚に分割されているケース対応）
         let mergedH = img.h;
         let bottomEdge = img.y + img.h;
         for (let idx2 = 0; idx2 < allImages.length; idx2++) {
@@ -265,7 +248,6 @@ async function extractPhotoSlotsMultiPage(pdf, pageNums, prefix) {
   return slots;
 }
 
-// 1ページから写真スロットを抽出（その3専用）
 async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
   const slots = [];
   try {
@@ -275,25 +257,20 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
 
     // --- テキスト取得（写真番号と対応メモを抽出）---
     const tc = await page.getTextContent();
-    // アイテムをy昇順（上から下）、同y内でx昇順に並べる
     const items = tc.items
       .filter(i => i.str && i.str.trim())
       .map(i => ({
         str: i.str.trim(),
         x: i.transform[4],
-        // PDF座標系: y=0が下端 → スクリーン座標に変換
         y: H - i.transform[5],
       }))
       .sort((a, b) => a.y - b.y || a.x - b.x);
 
-    // 写真番号エントリを抽出（径間番号も取得）
-    // まずページヘッダ（上部ty<0.15）から径間番号を取得（最も確実）
     let pageSpan = 1;
     for (let i = 0; i < items.length; i++) {
       if (items[i].str.replace(/\s/g, '') === '径間番号' && items[i].y / H < 0.15) {
         const spanLabelX = items[i].x;
         const spanLabelY = items[i].y;
-        // 同じy座標付近（y差5%以内）かつ右側にある最も近い数字を採用
         let bestX = 9999, bestVal = null;
         for (let j = 0; j < items.length; j++) {
           if (j === i) continue;
@@ -317,8 +294,6 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
       const tx = items[i].x / W;
       const ty = items[i].y / H;
 
-      // 写真番号テキストの右隣で最も近い数字を採用
-      // y差0.05以内 かつ x方向で右側にある数字のうち最も近いものを選ぶ
       let no = null;
       let bestXDist = 9999;
       for (let j = 0; j < items.length; j++) {
@@ -342,8 +317,6 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
     const imgCoords = await getPageImageCoords(page, W, H);
 
     // --- 写真番号テキストの座標に最も近い画像を列優先でマッチング ---
-    // ルール: 同じ列（x差0.12以内）でテキストより下にある画像のうち最も近いものを選ぶ
-    // 列マッチが見つからない場合はそのエントリをスキップ（ページ外の誤検出を除外）
     const used = new Set();
 
     for (const entry of photoEntries) {
@@ -354,29 +327,23 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
         if (used.has(idx)) continue;
         const img = imgCoords[idx];
 
-        // 同じ列か（x差0.12以内）
         if (Math.abs(img.x - entry.tx) >= 0.12) continue;
 
-        // 画像の上端がテキストより下にある（少し余裕を持たせる）
         if (img.y < entry.ty - 0.05) continue;
 
-        // y距離が最も近いものを選ぶ
         const score = Math.abs(img.y - entry.ty);
         if (score < bestScore) { bestScore = score; best = idx; }
       }
 
-      // 列マッチが見つかった場合のみ採用（見つからない=ページ外の誤検出なのでスキップ）
       if (best !== null) {
         used.add(best);
         const coord = imgCoords[best];
 
-        // 同列・直下に隣接する画像があれば高さを合算（市町村版など1スロットが上下2枚に分割されているケース対応）
         let mergedH = coord.h;
         let bottomEdge = coord.y + coord.h;
         for (let idx2 = 0; idx2 < imgCoords.length; idx2++) {
           if (used.has(idx2)) continue;
           const img2 = imgCoords[idx2];
-          // 同列（x差0.03以内）かつ直下に隣接（gap 0.01以内）
           if (Math.abs(img2.x - coord.x) < 0.03 && Math.abs(img2.y - bottomEdge) < 0.01) {
             used.add(idx2);
             mergedH += img2.h;
@@ -400,7 +367,6 @@ async function extractPhotoSlotsFromPage(pdf, pnum, prefix) {
   return slots;
 }
 
-// ページの画像座標を取得（左上から右下順）
 async function getPageImageCoords(page, W, H) {
   try {
     const ops = await page.getOperatorList();
@@ -409,7 +375,6 @@ async function getPageImageCoords(page, W, H) {
     const OPS = _pdfjs.OPS;
 
     const coords = [];
-    // CTMスタック（PDF座標系）
     const stack = [[1,0,0,1,0,0]];
 
     const mul = (m, n) => [
@@ -431,28 +396,22 @@ async function getPageImageCoords(page, W, H) {
                  fn === OPS.paintJpegXObject  ||
                  fn === OPS.paintImageMaskXObject) {
         const m = stack[stack.length-1];
-        // PDF座標: 左下が原点、y軸上向き
-        // 画像は (0,0)-(1,1) の正方形をCTMで変換
         const px = m[4];           // PDF x (左端)
         const py = m[5];           // PDF y (下端)
         const pw = Math.abs(m[0]) || Math.abs(m[2]); // 幅
         const ph = Math.abs(m[1]) || Math.abs(m[3]); // 高さ
 
-        // スクリーン座標（左上原点）に変換
-        // PDF座標: y=0が下、H=ページ高さ
         const sx = px / vp.width;
         const sy = (vp.height - py - ph) / vp.height;
         const sw = pw / vp.width;
         const sh = ph / vp.height;
 
-        // 写真サイズの下限（ヘッダーやアイコン等を除外）
         if (sw > 0.10 && sh > 0.08 && sx >= 0 && sy >= 0 && sx+sw <= 1.1 && sy+sh <= 1.1) {
           coords.push({ x: Math.max(0,sx), y: Math.max(0,sy), w: sw, h: sh });
         }
       }
     }
 
-    // 左上→右下順にソート（行を50px単位でグループ化）
     return coords.sort((a, b) => {
       const rowA = Math.round(a.y / 0.10);
       const rowB = Math.round(b.y / 0.10);
@@ -470,12 +429,10 @@ async function loadPDF(input) {
   if (!file) return;
   showToast('PDFを読み込んでいます...', '');
   try {
-    // pdfjsLibが初期化されているか確認
     const pdfjs = typeof globalThis.pdfjsLib !== 'undefined' ? globalThis.pdfjsLib
                 : typeof pdfjsLib !== 'undefined' ? pdfjsLib
                 : null;
     if (!pdfjs) { showToast('❌ PDF読み込みエラー（ライブラリ未初期化）', 'error'); return; }
-    // workerUrlのフォールバック設定
     if (window._pdfWorkerUrl && !pdfjs.GlobalWorkerOptions.workerSrc) {
       pdfjs.GlobalWorkerOptions.workerSrc = window._pdfWorkerUrl;
     }
@@ -489,7 +446,6 @@ async function loadPDF(input) {
     state.pageCache = {};
     Object.keys(prevPhotoCache).forEach(k => delete prevPhotoCache[k]);
 
-    // 前のデータを全クリア
     state.drawings    = {};
     state.photos      = {};
     Object.keys(drawState).forEach(k => delete drawState[k]);
@@ -510,6 +466,7 @@ async function loadPDF(input) {
     document.getElementById('btn-inspect').disabled = false;
     const formLabel = state.formType === 'kanagawa_municipal' ? '神奈川市町村版' : '標準版';
     showToast(`✅ ${pdf.numPages}ページ読み込み完了（${formLabel}）`, 'success');
+    _lastLoadPdfTime = Date.now();
   } catch(e) {
     showToast('❌ PDF読み込みエラー: ' + (e && e.message ? e.message : String(e)), 'error');
   }
@@ -520,12 +477,9 @@ async function loadPDF(input) {
 async function detectPageStructure(pdf) {
   const pageMap = {};
 
-  // 神奈川市町村版かどうか判定するフラグ
-  // 「点検調書」を含み「定期点検記録様式」「データ記録様式」を含まないページが存在する場合
   let kanagawaMunicipalCount = 0;
   let standardCount = 0;
 
-  // まず全ページをスキャンして様式タイプを判定
   const pageTexts = [];
   for (let p = 1; p <= pdf.numPages; p++) {
     try {
@@ -545,7 +499,6 @@ async function detectPageStructure(pdf) {
     }
   }
 
-  // 神奈川市町村版の判定：「点検調書」ページが存在し、標準様式ページがない
   const isKanagawaMunicipal = kanagawaMunicipalCount > 0 && standardCount === 0;
   state.formType = isKanagawaMunicipal ? 'kanagawa_municipal' : 'standard';
 
@@ -554,10 +507,8 @@ async function detectPageStructure(pdf) {
 
     if (isKanagawaMunicipal) {
       // ===== 神奈川市町村版 =====
-      // 「点検調書」を含むページのみ処理
       if (!text.includes('点検調書')) continue;
 
-      // 長い番号を先にチェック（その１２→その１の順）
       for (const [key, id] of [
         ['その１３', 's6'],  // 健全性の診断所見
         ['その１２', 's5'],  // 状態把握の方法
@@ -591,7 +542,6 @@ async function detectPageStructure(pdf) {
       const isData   = text.includes('データ記録様式');
       if (!isKisoku && !isData) continue;
 
-      // 長い名前を先にチェック（その１０→その１の順）
       for (const [key, id] of [
         ['その１０', 's10'], ['その９', 's9'],
         ['その６', 's6'],   ['その５', 's5'],
@@ -613,13 +563,11 @@ async function detectPageStructure(pdf) {
 
   state.pageMap = pageMap;
 
-  // メニュー定義のpagesを更新
   const menuDef = [...MENU_SURVEY_BASE, ...MENU_INSPECT_EXTRA];
   menuDef.forEach(item => {
     if (pageMap[item.mapKey]) {
       item.pages = pageMap[item.mapKey];
     }
-    // combined-viewerの場合はs9のページを使用
     if (item.type === 'combined-viewer' && pageMap['s9']) {
       item.pages = pageMap['s9'];
     }
@@ -652,7 +600,6 @@ async function getPageImage(pageNum, scale = 3.0) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     const dataURL = canvas.toDataURL('image/jpeg', 0.92);
     state.pageCache[cacheKey] = dataURL;
-    // キャッシュ上限（高解像度化に伴いメモリ節約のため8件に削減）
     const keys = Object.keys(state.pageCache);
     if (keys.length > 8) delete state.pageCache[keys[0]];
     return dataURL;
@@ -671,7 +618,6 @@ function enterMode(mode) {
 
 // ===== メニュー表示 =====
 function showMenu(forward = true) {
-  // 戻るときだけ呼ばれる（enterModeからは呼ばれない）
   showMenuContent();
 }
 
@@ -744,7 +690,6 @@ async function openSection(item) {
       </div>
     `).join('');
     content.appendChild(section);
-    // 非同期でページレンダリング
     for (const p of item.pages) {
       const img = await getPageImage(p);
       if (img) {
@@ -776,7 +721,6 @@ async function renderCombinedViewer(item, tabs, content) {
                      pages: state.pageMap?.['s10'] || [],
                      photoRequired: true };
 
-  // タブを2つ作成：損傷図 / 損傷写真
   const tabDraw  = document.createElement('div');
   tabDraw.className  = 'viewer-tab active';
   tabDraw.textContent = '🗺️ 損傷図';
@@ -786,18 +730,15 @@ async function renderCombinedViewer(item, tabs, content) {
   tabs.appendChild(tabDraw);
   tabs.appendChild(tabPhoto);
 
-  // セクション：損傷図
   const secDraw = document.createElement('div');
   secDraw.className = 'viewer-section active';
 
-  // セクション：損傷写真
   const secPhoto = document.createElement('div');
   secPhoto.className = 'viewer-section';
 
   content.appendChild(secDraw);
   content.appendChild(secPhoto);
 
-  // タブ切り替え
   tabDraw.onclick = () => {
     tabDraw.classList.add('active');  tabPhoto.classList.remove('active');
     secDraw.classList.add('active');  secPhoto.classList.remove('active');
@@ -805,33 +746,27 @@ async function renderCombinedViewer(item, tabs, content) {
   tabPhoto.onclick = () => {
     tabPhoto.classList.add('active'); tabDraw.classList.remove('active');
     secPhoto.classList.add('active'); secDraw.classList.remove('active');
-    // 初回表示時にrenderPhotoViewerを実行
     if (!secPhoto.dataset.rendered) {
       secPhoto.dataset.rendered = '1';
       renderPhotoViewer(s10Item,
         { appendChild: () => {}, querySelectorAll: () => [] },
         secPhoto);
     }
-    // 追加写真グリッドを常に最新化
     renderExtraPhotoGrid('s10');
   };
 
-  // 損傷図を描画
   if (s9Pages.length === 0) {
     secDraw.innerHTML = '<div class="page-loading">損傷図のページが見つかりません</div>';
   } else {
-    // ページタブ（複数ページある場合）
     const innerTabs = document.createElement('div');
     innerTabs.style.cssText = 'display:flex;align-items:center;overflow-x:auto;padding:4px 8px;gap:4px;border-bottom:1px solid var(--border);';
     const innerSections = [];
 
-    // 一時保存ボタン（右端に固定）
     const tempSaveBtn = document.createElement('button');
     tempSaveBtn.textContent = '💾 一時保存';
     tempSaveBtn.style.cssText = 'margin-left:auto;flex-shrink:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;';
     tempSaveBtn.onclick = () => saveTempData();
 
-    // 写真追加ボタン
     const extraPhotoBtn = document.createElement('button');
     extraPhotoBtn.textContent = '📷 写真追加';
     extraPhotoBtn.style.cssText = 'flex-shrink:0;background:var(--accent,#3b82f6);border:none;color:#fff;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;margin-left:6px;';
@@ -840,7 +775,6 @@ async function renderCombinedViewer(item, tabs, content) {
     for (let i = 0; i < s9Pages.length; i++) {
       const p = s9Pages[i];
 
-      // ページタブ
       if (s9Pages.length > 1) {
         const ptab = document.createElement('button');
         ptab.style.cssText = `background:${i===0?'var(--accent)':'var(--surface2)'};border:1px solid var(--border);color:${i===0?'#fff':'var(--text)'};border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;white-space:nowrap;`;
@@ -861,7 +795,6 @@ async function renderCombinedViewer(item, tabs, content) {
 
       const drawKey = `s9s10_p${p}`;
 
-      // ツールバー・キャンバス・写真ボタンパネル
       psec.innerHTML = `
         ${buildToolbarHTML(drawKey, p)}
         <div class="draw-zoom-wrapper" id="zoom-wrapper-${drawKey}">
@@ -896,7 +829,6 @@ async function renderCombinedViewer(item, tabs, content) {
   }
 }
 async function renderDrawViewer(item, tabs, content) {
-  // タブ
   item.pages.forEach((p, i) => {
     const tab = document.createElement('div');
     tab.className = 'viewer-tab' + (i === 0 ? ' active' : '');
@@ -916,7 +848,6 @@ async function renderDrawViewer(item, tabs, content) {
     section.className = 'viewer-section' + (i === 0 ? ' active' : '');
     const drawKey = `${item.key}_p${p}`;
 
-    // フローティングツールバー + ズームラッパー
     section.innerHTML = `
       ${buildToolbarHTML(drawKey, p)}
       <div class="draw-zoom-wrapper" id="zoom-wrapper-${drawKey}">
@@ -930,20 +861,17 @@ async function renderDrawViewer(item, tabs, content) {
     `;
     content.appendChild(section);
 
-    // 非同期でページ画像をロードしてキャンバスを設定
     const imgData = await getPageImage(p);
     if (imgData) {
       setupDrawCanvas(drawKey, imgData);
     }
 
-    // その10の写真番号ボタンを生成（s9のみ）
     if (item.key === 's9') {
       setTimeout(() => renderPhotoLinkButtons(drawKey), 500);
     }
   }
 }
 
-// 範囲選択プレビュー
 function renderRangeSelect(key, x1, y1, x2, y2) {
   const svg    = document.getElementById(`drawsvg-preview-${key}`);
   const canvas = document.getElementById(`drawcanvas-${key}`);
@@ -975,12 +903,10 @@ async function renderPhotoLinkButtons(drawKey) {
   panel.style.display = 'block';
   btns.innerHTML = '';
 
-  // 径間ごとにグループ化して表示（常に径間ラベルを表示）
   const spans = [...new Set(damageSlots.map(s => s.span || 1))].sort((a,b) => a-b);
   spans.forEach(span => {
     const spanSlots = damageSlots.filter(s => (s.span || 1) === span);
 
-    // 径間ラベルは常に表示
     const label = document.createElement('div');
     label.style.cssText = 'width:100%;font-size:10px;font-weight:700;color:var(--accent);margin-top:6px;margin-bottom:2px;';
     label.textContent = `${span}径間`;
@@ -1024,11 +950,9 @@ function openPhotoPopup(slotKey) {
   popup.style.display = 'flex';
 }
 
-
 function closePhotoPopup() {
   document.getElementById('photo-popup').style.display = 'none';
   _popupSlotKey = null;
-  // 写真番号ボタンの色を更新
   document.querySelectorAll('[id^="photo-link-btns-"]').forEach(el => {
     const drawKey = el.id.replace('photo-link-btns-', '');
     renderPhotoLinkButtons(drawKey);
@@ -1067,7 +991,6 @@ function openPhotoLightbox(slotKey, idx, sectionKey, directDataURL) {
 }
 
 function updateLightbox() {
-  // 単体URL直接表示モード（追加写真のライトボックス）
   if (_lightboxDirectURL) {
     const img = document.getElementById('lb-img');
     if (img) img.src = _lightboxDirectURL;
@@ -1105,19 +1028,16 @@ function closePhotoLightbox() {
   _lightboxSlotKey = null;
 }
 
-// ポップアップ内の現在表示インデックス
 let _popupPhotoIdx = 0;
 
 function popupCapturePhoto(addMode) {
   if (!_popupSlotKey) return;
 
-  // TG-7モードがオンの場合はデジカメ待機へ
   if (_tg7ModeOn) {
     popupCapturePhotoTG7(addMode);
     return;
   }
 
-  // 通常：iPadカメラを起動（競合防止：新規input生成方式）
   const old = document.getElementById('popup-camera-input-dyn');
   if (old) old.remove();
   const input = document.createElement('input');
@@ -1149,7 +1069,6 @@ function popupCapturePhoto(addMode) {
         const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
         const slot  = slots.find(s => s.key === _popupSlotKey);
         if (slot) updatePopup(slot);
-        // グリッド側も更新
         _refreshPhotoGrid(_popupSlotKey);
         showToast('✅ 写真を保存しました', 'success');
       }); // compressImage end
@@ -1161,7 +1080,6 @@ function popupCapturePhoto(addMode) {
   input.click();
 }
 
-// 旧関数（互換性のため残す）
 function popupTakePhoto() { popupCapturePhoto(false); }
 function popupPhotoSelected() {}
 
@@ -1194,14 +1112,12 @@ function popupDeleteCurrentPhoto() {
 }
 
 function _refreshPhotoGrid(slotKey) {
-  // 損傷写真グリッドを更新
   const grid10 = document.getElementById('photo-grid-s10');
   if (grid10) {
     grid10.innerHTML = DAMAGE_PHOTO_SLOTS.map(s => renderPhotoSlot(s, 's10')).join('');
     loadPrevPhotosForSlots(DAMAGE_PHOTO_SLOTS);
     attachAllGridSwipes('s10');
   }
-  // No.ボタンの色を更新
   document.querySelectorAll('[id^="photo-link-btns-"]').forEach(el => {
     renderPhotoLinkButtons(el.id.replace('photo-link-btns-', ''));
   });
@@ -1221,7 +1137,6 @@ function _updatePopupPhotoDisplay(list, prevIdx) {
   const safeIdx = Math.max(0, Math.min(list.length - 1, _popupPhotoIdx));
   _popupPhotoIdx = safeIdx;
 
-  // スライドアニメーション
   if (img && stage && prevIdx !== undefined && prevIdx !== safeIdx) {
     const dir = safeIdx > prevIdx ? 1 : -1;
     img.style.transition = 'none';
@@ -1253,11 +1168,9 @@ function _updatePopupPhotoDisplay(list, prevIdx) {
 function updatePopup(slot) {
   if (!slot) return;
 
-  // タイトル・ラベル
   document.getElementById('popup-title').textContent = '📷 写真番号 No.' + slot.prevNo;
   document.getElementById('popup-label').textContent  = slot.label || '';
 
-  // 前回写真
   const prevImg  = document.getElementById('popup-prev-img');
   const prevNone = document.getElementById('popup-prev-none');
   if (prevImg && prevNone) {
@@ -1272,7 +1185,6 @@ function updatePopup(slot) {
     }
   }
 
-  // 今回写真
   const wrap = document.getElementById('popup-current-wrap');
   const none = document.getElementById('popup-current-none');
   const list = normalizePhotoList(state.photos[slot.key]);
@@ -1290,7 +1202,6 @@ function updatePopup(slot) {
 }
 
 function popupNav(dir) {
-  // 径間でグループ化し、径間内No.順→次の径間の順で並べる
   const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON)
     .slice()
     .sort((a, b) => (a.span || 1) - (b.span || 1) || a.prevNo - b.prevNo);
@@ -1302,8 +1213,6 @@ function popupNav(dir) {
 
 // ===== 共通ツールバーHTML生成 =====
 function buildToolbarHTML(drawKey, pageNum) {
-  // 描画ツールボタン（長押しで太さ・塗りメニュー）を生成するヘルパー
-  // data-* 属性でツール種別を持たせ、setupToolbarLongPress で処理
   return `
     <div class="draw-toolbar" id="toolbar-${drawKey}">
       <div class="draw-toolbar-header" id="toolbar-header-${drawKey}">
@@ -1388,7 +1297,6 @@ function setupToolbarLongPress(drawKey) {
     btn.addEventListener('touchend',   cancelLongPress, { passive: true });
     btn.addEventListener('touchmove',  onMove, { passive: true });
     btn.addEventListener('touchcancel', cancelLongPress, { passive: true });
-    // マウス対応（PC確認用）
     btn.addEventListener('mousedown', startLongPress);
     btn.addEventListener('mouseup',   cancelLongPress);
     btn.addEventListener('mousemove', onMove);
@@ -1396,7 +1304,6 @@ function setupToolbarLongPress(drawKey) {
 }
 
 function showToolSizeMenu(btn, key) {
-  // 既存メニューを全削除
   document.querySelectorAll('.tool-size-popup').forEach(el => el.remove());
 
   const ds = drawState[key];
@@ -1482,7 +1389,6 @@ function showToolSizeMenu(btn, key) {
 
   document.body.appendChild(menu);
 
-  // 画面外タップで閉じる
   setTimeout(() => {
     const dismiss = (e) => {
       if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('touchstart', dismiss); document.removeEventListener('mousedown', dismiss); }
@@ -1492,19 +1398,16 @@ function showToolSizeMenu(btn, key) {
   }, 100);
 }
 
-// setSizeMM の値渡し版（ボタン参照不要）
 function setSizeMMByValue(mm, key) {
   const ds = drawState[key];
   if (!ds) return;
   ds.sizeMM = mm;
-  // 全ツールのサイズラベルを更新
   ['pen','line','arrow','rect','ellipse'].forEach(tool => {
     const label = document.getElementById(`sizelabel-${tool}-${key}`);
     if (label) label.textContent = mm;
   });
 }
 
-// setPattern の値渡し版
 function setPatternByValue(pattern, key) {
   const ds = drawState[key];
   if (!ds) return;
@@ -1560,9 +1463,7 @@ function setupToolbarDrag(key) {
   window.addEventListener('mouseup',    onEnd);
 }
 
-// ズーム状態管理（キーごと）
 const zoomScales = {};
-// panX/panYもキーごとに永続保存（メニュー戻り後も位置を維持）
 const zoomStates = {};
 
 // ===== ピンチズーム + スクロール 全面改善版 =====
@@ -1571,7 +1472,6 @@ function setupPinchZoom(key) {
   const inner   = document.getElementById(`zoom-inner-${key}`);
   if (!wrapper || !inner) return;
 
-  // 前回の状態を復元（メニューから戻ってきた場合も位置を維持）
   const saved  = zoomStates[key] || { scale: 1, panX: 0, panY: 0 };
   let scale    = saved.scale;
   let originX  = 0, originY  = 0;
@@ -1588,7 +1488,6 @@ function setupPinchZoom(key) {
     t[0].clientY - t[1].clientY
   );
 
-  // 保存済み状態があれば即座に復元
   if (zoomStates[key]) {
     inner.style.transform = `translate(${panX}px,${panY}px) scale(${scale})`;
   }
@@ -1623,7 +1522,6 @@ function setupPinchZoom(key) {
       isPinching = true; isPanning = false;
       initDist = getDist(e.touches);
       lastScale = scale; lastPanX = panX; lastPanY = panY;
-      // 描画中だった場合は描画を中断（余計な線を防ぐ）
       if (drawState[key]) {
         drawState[key].drawing = false;
         drawState[key]._pinchInProgress = true;
@@ -1639,7 +1537,6 @@ function setupPinchZoom(key) {
         if (drawState[key]) drawState[key].drawing = false;
         e.stopPropagation(); e.preventDefault();
       } else {
-        // ピンチ直後の1本指は描画しない（_pinchInProgressが残っている間）
         isPanning = false; isPinching = false;
       }
     }
@@ -1653,7 +1550,6 @@ function setupPinchZoom(key) {
       const wRect = wrapper.getBoundingClientRect();
       const midX  = (e.touches[0].clientX + e.touches[1].clientX) / 2 - wRect.left;
       const midY  = (e.touches[0].clientY + e.touches[1].clientY) / 2 - wRect.top;
-      // 現在のscale/panからコンテンツ座標を求め、newScaleで再配置
       const contentX = (midX - panX) / scale;
       const contentY = (midY - panY) / scale;
       panX = midX - contentX * newScale;
@@ -1667,7 +1563,6 @@ function setupPinchZoom(key) {
     } else if (isPanning && e.touches.length === 1) {
       panX = lastPanX + (e.touches[0].clientX - lastTouchX);
       panY = lastPanY + (e.touches[0].clientY - lastTouchY);
-      // ズーム中のみ範囲制限（スクロールモードは自由に移動）
       if (scale > 1.01 && drawState[key]?.tool !== 'scroll') clampPan();
       applyTransform();
       e.stopPropagation(); e.preventDefault();
@@ -1682,14 +1577,11 @@ function setupPinchZoom(key) {
         scale = 1;
         applyTransform();
       }
-      // 描画ツール使用中はcanvas側のonEndに任せる（drawing=falseにしない）
       if (drawState[key] && drawState[key].tool === 'scroll') {
         drawState[key].drawing = false;
       }
-      // ピンチ終了後は_pinchInProgressをクリア
       if (drawState[key]) {
         drawState[key].drawing = false;
-        // 次のtouchstartまで待ってからリセット
         setTimeout(() => {
           if (drawState[key]) drawState[key]._pinchInProgress = false;
         }, 50);
@@ -1697,7 +1589,6 @@ function setupPinchZoom(key) {
     }
   });
 
-  // ダブルタップでズームリセット
   let lastTap = 0;
   wrapper.addEventListener('touchend', (e) => {
     if (e.touches.length > 0) return;
@@ -1759,7 +1650,6 @@ function startRotateHandle(e, key) {
   const container = document.getElementById(`draw-container-${key}`);
   const rect = container.getBoundingClientRect();
 
-  // オブジェクト中心座標（正規化→画面px）
   const cx = (obj.x1 + obj.x2) / 2 * rect.width  + rect.left;
   const cy = (obj.y1 + obj.y2) / 2 * rect.height + rect.top;
 
@@ -1773,9 +1663,7 @@ function startRotateHandle(e, key) {
     ev.preventDefault();
     const src = ev.touches ? ev.touches[0] : ev;
     const angle = getAngle(src.clientX, src.clientY);
-    // 前回との差分で回転（なめらか）
     let delta = angle - prevAngle;
-    // -180〜180に正規化
     if (delta > 180)  delta -= 360;
     if (delta < -180) delta += 360;
     obj.rotation = ((obj.rotation || 0) + delta + 360) % 360;
@@ -1833,7 +1721,6 @@ function startEndpointHandle(e, key, objId, point) {
     if (snapped.snapped) showSnapIndicator(key, '端点');
     else hideSnapIndicator(key);
 
-    // 軽量DOM更新（innerHTML不使用）
     const canvas = document.getElementById(`drawcanvas-${key}`);
     const W = canvas.offsetWidth, H = canvas.offsetHeight;
     const px1 = obj.x1*W, py1 = obj.y1*H, px2 = obj.x2*W, py2 = obj.y2*H;
@@ -1842,13 +1729,11 @@ function startEndpointHandle(e, key, objId, point) {
     const selG = svg.querySelector('.svg-obj.selected');
     if (!selG) { renderSVGObjects(key); return; }
 
-    // 線本体を更新
     const lineEl = selG.querySelector('line');
     if (lineEl) {
       lineEl.setAttribute('x1', px1); lineEl.setAttribute('y1', py1);
       lineEl.setAttribute('x2', px2); lineEl.setAttribute('y2', py2);
     }
-    // 選択ハイライト点線を更新
     const lines = selG.querySelectorAll('line');
     lines.forEach(l => {
       if (l.getAttribute('stroke-dasharray')) {
@@ -1856,7 +1741,6 @@ function startEndpointHandle(e, key, objId, point) {
         l.setAttribute('x2', px2); l.setAttribute('y2', py2);
       }
     });
-    // 矢印ヘッドを更新
     const arrEl = selG.querySelector('polyline');
     if (arrEl && obj.type === 'arrow') {
       const sw = mmToPx(obj.sizeMM, 1);
@@ -1866,7 +1750,6 @@ function startEndpointHandle(e, key, objId, point) {
         `${px2-al*Math.cos(angle-0.4)},${py2-al*Math.sin(angle-0.4)} ${px2},${py2} ${px2-al*Math.cos(angle+0.4)},${py2-al*Math.sin(angle+0.4)}`
       );
     }
-    // 端点ハンドルの◆を更新
     const hgs = selG.querySelectorAll('g');
     const pts = [[px1,py1],[px2,py2]];
     hgs.forEach((hg, i) => {
@@ -1918,7 +1801,6 @@ function snapToEndpoints(nx, ny, objects, excludeId) {
 }
 
 // ===== リサイズハンドル =====
-// handleType: 'tl','tc','tr','ml','mr','bl','bc','br'
 function startResizeHandle(e, key, handleType) {
   e.preventDefault(); e.stopPropagation();
   const ds = drawState[key];
@@ -1926,7 +1808,6 @@ function startResizeHandle(e, key, handleType) {
   const obj = ds.objects.find(o => o.id === ds.selectedId);
   if (!obj) return;
 
-  // Undo用にスナップショット
   if (!ds.history) ds.history = [];
   ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
   if (ds.history.length > 50) ds.history.shift();
@@ -1937,12 +1818,10 @@ function startResizeHandle(e, key, handleType) {
   const baseW  = rect.width  / scale;
   const baseH  = rect.height / scale;
 
-  // 開始時のオブジェクト座標を正規化して固定（固定辺の基準）
   const ox1 = Math.min(obj.x1, obj.x2);
   const oy1 = Math.min(obj.y1, obj.y2);
   const ox2 = Math.max(obj.x1, obj.x2);
   const oy2 = Math.max(obj.y1, obj.y2);
-  // 縦横比（四隅用）：開始時に1度だけ計算して固定
   const aspect = (ox2 - ox1) / Math.max(oy2 - oy1, 0.001);
 
   const getPos = (ev) => {
@@ -1956,7 +1835,6 @@ function startResizeHandle(e, key, handleType) {
   let rafId = null;
   let latestNx = 0, latestNy = 0;
 
-  // 座標計算のみ（DOM触らず）
   const calcNewCoords = (nx, ny) => {
     switch (handleType) {
       case 'tl': { const w=Math.max(ox2-nx,MIN); const h=w/aspect; return {x1:ox2-w,y1:oy2-h,x2:ox2,y2:oy2}; }
@@ -1971,7 +1849,6 @@ function startResizeHandle(e, key, handleType) {
     }
   };
 
-  // DOM属性だけ更新する軽量描画（innerHTML触らず）
   const updateResizeOnly = (coords, W, H) => {
     const svg = document.getElementById(`drawsvg-${key}`);
     if (!svg) return;
@@ -1983,7 +1860,6 @@ function startResizeHandle(e, key, handleType) {
     const selG = svg.querySelector('.svg-obj.selected');
     if (!selG) { renderSVGObjects(key); return; }
 
-    // オブジェクト本体を更新
     if (obj.type === 'rect') {
       const r = selG.querySelector('rect');
       if (r) { r.setAttribute('x',Math.min(nx1,nx2)); r.setAttribute('y',Math.min(ny1,ny2)); r.setAttribute('width',Math.abs(nx2-nx1)); r.setAttribute('height',Math.abs(ny2-ny1)); }
@@ -1998,11 +1874,9 @@ function startResizeHandle(e, key, handleType) {
       if (ln) { ln.setAttribute('x1',nx1); ln.setAttribute('y1',ny1); ln.setAttribute('x2',nx2); ln.setAttribute('y2',ny2); }
     }
 
-    // 青枠を更新
     const rects = selG.querySelectorAll('rect[stroke="#60d0ff"]');
     rects.forEach(r => { r.setAttribute('x',bx); r.setAttribute('y',by); r.setAttribute('width',bw); r.setAttribute('height',bh); });
 
-    // ハンドル位置を更新
     const hPos = [
       {x:bx,   y:by},   {x:bmx,  y:by},   {x:bx+bw,y:by},
       {x:bx,   y:bmy},  {x:bx+bw,y:bmy},
@@ -2018,7 +1892,6 @@ function startResizeHandle(e, key, handleType) {
       if (dot) { dot.setAttribute('x',hx-5); dot.setAttribute('y',hy-5); dot.setAttribute('width',10); dot.setAttribute('height',10); dot.setAttribute('transform',`rotate(45 ${hx} ${hy})`); }
     });
 
-    // 回転ハンドルも位置更新
     const rotG = svg.querySelector('g[data-rot]');
     if (rotG) {
       const rhx = (nx1+nx2)/2, rhy = Math.min(ny1,ny2)-36;
@@ -2031,17 +1904,13 @@ function startResizeHandle(e, key, handleType) {
     }
   };
 
-  // 実際の描画更新（RAF内で実行）
   const applyResize = () => {
     rafId = null;
     const coords = calcNewCoords(latestNx, latestNy);
     if (!coords) return;
-    // objを更新
     obj.x1=coords.x1; obj.y1=coords.y1; obj.x2=coords.x2; obj.y2=coords.y2;
-    // W/H取得
     const W = canvas.getBoundingClientRect().width  || canvas.offsetWidth;
     const H = canvas.getBoundingClientRect().height || canvas.offsetHeight;
-    // DOM属性のみ更新（innerHTML不使用）
     updateResizeOnly(coords, W, H);
   };
 
@@ -2050,13 +1919,11 @@ function startResizeHandle(e, key, handleType) {
     const pos = getPos(ev);
     latestNx = pos.nx;
     latestNy = pos.ny;
-    // RAFで間引き：前フレームがまだ処理中なら新たにリクエストしない
     if (!rafId) rafId = requestAnimationFrame(applyResize);
   };
 
   const onEnd = () => {
     if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
-    // 終了後はDOM全体を正確に再構築
     renderSVGObjects(key);
     window.removeEventListener('touchmove', onMove);
     window.removeEventListener('touchend',  onEnd);
@@ -2071,7 +1938,6 @@ function startResizeHandle(e, key, handleType) {
 }
 
 // ===== 直線スナップ（水平・垂直・45°） =====
-// 角度が±SNAP_DEG以内なら吸い付く
 const SNAP_DEG = 15;
 function snapLineAngle(nx1, ny1, nx2, ny2) {
   const dx = nx2 - nx1;
@@ -2130,7 +1996,6 @@ function renderSelectedPenStrokes(key) {
   const svg = document.getElementById(`drawsvg-${key}`);
   if (!svg || !ds) return;
 
-  // 既存のペンハイライトを削除
   svg.querySelectorAll('.pen-highlight').forEach(el => el.remove());
 
   const ids = ds.selectedPenIds || [];
@@ -2198,7 +2063,6 @@ function redrawPenStrokes(key) {
 function deletePenStrokes(key) {
   const ds = drawState[key];
   if (!ds || !ds.selectedPenIds?.length) return;
-  // Undo用保存
   if (!ds.history) ds.history = [];
   ds.history.push({ type:'pen', penData: document.getElementById(`drawcanvas-${key}`)?.toDataURL(), penStrokes: ds.penStrokes.map(s=>({...s,points:[...s.points]})) });
   if (ds.history.length > 30) ds.history.shift();
@@ -2243,7 +2107,6 @@ function pastePenStrokes(key) {
 
 let globalClipboardPen = null;
 
-// 選択済みペンのbbox内タップ判定
 function isPenHit(nx, ny, selectedPenIds, penStrokes) {
   return penStrokes.some(s => {
     if (!selectedPenIds.includes(s.id) || !s.bbox) return false;
@@ -2280,33 +2143,28 @@ function setupDrawCanvas(key, imgData) {
     container.style.position = 'relative';
     container.style.userSelect = 'none';
 
-    // ベース画像
     const baseImg = document.createElement('img');
     baseImg.src = imgData;
     baseImg.className = 'draw-base';
     baseImg.draggable = false;
     container.appendChild(baseImg);
 
-    // フリーハンドキャンバス
     const canvas = document.createElement('canvas');
     canvas.id = `drawcanvas-${key}`;
     canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;touch-action:none;';
     container.appendChild(canvas);
 
-    // SVGオーバーレイ
     const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.id = `drawsvg-${key}`;
     svg.setAttribute('class','draw-svg-overlay');
     svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;';
     container.appendChild(svg);
 
-    // プレビューSVG
     const svgPreview = document.createElementNS('http://www.w3.org/2000/svg','svg');
     svgPreview.id = `drawsvg-preview-${key}`;
     svgPreview.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;';
     container.appendChild(svgPreview);
 
-    // 状態初期化（初期ツールはscroll）
     if (!drawState[key]) {
       drawState[key] = {
         tool:'scroll', color:'#ef4444', sizeMM:0.25, pattern:'none',
@@ -2315,19 +2173,13 @@ function setupDrawCanvas(key, imgData) {
       };
     }
 
-    // キャンバスリサイズ（ズーム前の自然サイズを基準に）
-    // fromResize=true の場合はtransformをリセットせずCanvasサイズのみ更新
     const resizeCanvas = (fromResize = false) => {
-      // ペン描画中はリサイズをスキップ（ズームリセット防止）
       if (drawState[key]?.drawing) return;
 
       const inner = document.getElementById(`zoom-inner-${key}`);
-      // zoomStatesから現在のズーム状態を取得（確実に復元するため）
       const savedZoom = zoomStates[key];
       const hasZoomState = savedZoom && (savedZoom.scale > 1 || savedZoom.panX !== 0 || savedZoom.panY !== 0);
 
-      // resizeイベント由来かつズーム状態がある場合はtransformをリセットしない
-      // （リセットするとスクロール位置が中央に戻る）
       if (!fromResize || !hasZoomState) {
         if (inner) inner.style.transform = 'none';
       }
@@ -2335,13 +2187,11 @@ function setupDrawCanvas(key, imgData) {
       const rect = baseImg.getBoundingClientRect();
       const dpr  = window.devicePixelRatio;
 
-      // rectが0の場合は再試行（まだレイアウト未確定）
       if (rect.width === 0) {
         setTimeout(() => resizeCanvas(fromResize), 100);
         return;
       }
 
-      // fromResizeかつズームのみ（panなし）の場合、Canvasサイズをズームを考慮して計算
       let canvasW = rect.width;
       let canvasH = rect.height;
       if (fromResize && hasZoomState && savedZoom.scale > 1) {
@@ -2353,7 +2203,6 @@ function setupDrawCanvas(key, imgData) {
       canvas.height = canvasH * dpr;
 
       if (inner) {
-        // zoomStatesから確実に復元
         if (hasZoomState) {
           inner.style.transformOrigin = '0 0';
           inner.style.transform = `translate(${savedZoom.panX}px,${savedZoom.panY}px) scale(${savedZoom.scale})`;
@@ -2362,7 +2211,6 @@ function setupDrawCanvas(key, imgData) {
         }
       }
 
-      // savedPenDataを優先、なければstate.drawingsから復元
       const penData = drawState[key]?.savedPenData || state.drawings[key];
       if (penData) {
         const ctx = canvas.getContext('2d');
@@ -2377,7 +2225,6 @@ function setupDrawCanvas(key, imgData) {
         renderSVGObjects(key);
       }
     };
-    // Canvasサイズが確定するまで待ってから初期化（最大2秒）
     let retryCount = 0;
     const tryResizeCanvas = () => {
       const rect = baseImg.getBoundingClientRect();
@@ -2393,7 +2240,6 @@ function setupDrawCanvas(key, imgData) {
 
     setupDrawEvents(canvas, svg, key);
 
-    // ツールバードラッグ・ピンチズームを初期化
     setTimeout(() => {
       setupToolbarDrag(key);
       setupToolbarLongPress(key);
@@ -2426,20 +2272,17 @@ function setupDrawEvents(canvas, svg, key) {
 
   // ===== ポインタ開始 =====
   const onStart = (e) => {
-    // 指2本のピンチはwrapper側で処理（touchstartで検知）
     if (e.touches && e.touches.length >= 2) {
       if (drawState[key]) drawState[key].drawing = false;
       return;
     }
     const ds = drawState[key];
 
-    // ピンチ直後は描画しない（余計な線防止）
     if (ds?._pinchInProgress) {
       ds._pinchInProgress = false;
       return;
     }
 
-    // スクロールモードはパンに渡す
     if (ds?.tool === 'scroll') return;
     e.preventDefault();
     const pos = getPos(e);
@@ -2447,7 +2290,6 @@ function setupDrawEvents(canvas, svg, key) {
     if (ds.tool === 'select') {
       const hit = hitTest(pos.nx, pos.ny, ds.objects, canvas);
       if (hit) {
-        // SVGオブジェクトにヒット：選択してドラッグ待ち（すぐ移動開始しない）
         ds.selectedId    = hit.id;
         ds.selectedIds   = [hit.id];
         ds.selectedPenIds = [];
@@ -2457,14 +2299,12 @@ function setupDrawEvents(canvas, svg, key) {
         ds.startX = pos.nx; ds.startY = pos.ny;
         ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       } else if (ds.selectedPenIds?.length && isPenHit(pos.nx, pos.ny, ds.selectedPenIds, ds.penStrokes||[])) {
-        // 選択済みペンストロークをタップ → ドラッグ待ち
         ds.drawing       = true;
         ds.isRangeSelect = false;
         ds._pendingMove  = true;  // 移動確定待ち
         ds.startX = pos.nx; ds.startY = pos.ny;
         ds.lastX  = pos.nx; ds.lastY  = pos.ny;
       } else {
-        // 空白タップ：範囲選択開始
         ds.selectedId    = null;
         ds.selectedPenIds = [];
         ds._pendingMove  = false;
@@ -2484,7 +2324,6 @@ function setupDrawEvents(canvas, svg, key) {
     ds.lastX  = pos.nx; ds.lastY  = pos.ny;
 
     if (ds.tool === 'pen' || ds.tool === 'eraser') {
-      // キャンバスサイズ確認
       const dpr = window.devicePixelRatio || 1;
       const cssW = canvas.offsetWidth;
       const cssH = canvas.offsetHeight;
@@ -2498,11 +2337,9 @@ function setupDrawEvents(canvas, svg, key) {
           img2.src = saved;
         }
       }
-      // 統合履歴に記録（ペン）
       if (!ds.history) ds.history = [];
       ds.history.push({ type: 'pen', penData: canvas.toDataURL(), penStrokes: (ds.penStrokes||[]).map(s=>({...s,points:[...s.points]})) });
       if (ds.history.length > 30) ds.history.shift();
-      // ストローク開始
       if (!ds.penStrokes) ds.penStrokes = [];
       ds._currentStroke = { id: Date.now(), color: ds.color, sizeMM: ds.sizeMM, points: [{nx:pos.nx, ny:pos.ny, x:pos.x, y:pos.y}] };
       const ctx = canvas.getContext('2d');
@@ -2520,13 +2357,11 @@ function setupDrawEvents(canvas, svg, key) {
     }
     const ds = drawState[key];
     if (!ds.drawing) return;
-    // スクロールツールはwrapper側のpanに任せる
     if (ds.tool === 'scroll') return;
     e.preventDefault();
     const pos = getPos(e);
     ds.lastX = pos.nx; ds.lastY = pos.ny;
 
-    // 範囲選択プレビュー
     if (ds.tool === 'select' && ds.isRangeSelect) {
       renderRangeSelect(key, ds.startX, ds.startY, pos.nx, pos.ny);
       return;
@@ -2540,7 +2375,6 @@ function setupDrawEvents(canvas, svg, key) {
       ctx.strokeStyle = ds.color;
       ctx.globalCompositeOperation = 'source-over';
 
-      // ベジェ曲線で滑らかに描画
       if (ds._currentStroke && ds._currentStroke.points.length >= 2) {
         const pts = ds._currentStroke.points;
         const prev = pts[pts.length - 1];
@@ -2558,7 +2392,6 @@ function setupDrawEvents(canvas, svg, key) {
         ctx.moveTo(pos.x, pos.y);
       }
 
-      // ストローク座標を記録（間引き：前点から一定距離以上の場合のみ）
       if (ds._currentStroke) {
         const pts = ds._currentStroke.points;
         const last = pts[pts.length-1];
@@ -2566,7 +2399,6 @@ function setupDrawEvents(canvas, svg, key) {
           pts.push({nx:pos.nx, ny:pos.ny, x:pos.x, y:pos.y});
         }
       }
-      // 確実に画面に反映
       requestAnimationFrame(() => {});
     } else if (ds.tool === 'eraser') {
       const ctx = canvas.getContext('2d');
@@ -2580,7 +2412,6 @@ function setupDrawEvents(canvas, svg, key) {
       ctx.moveTo(pos.x, pos.y);
       requestAnimationFrame(() => {});
     } else if (ds.tool === 'line' || ds.tool === 'arrow') {
-      // 端点スナップ → 角度スナップの順に適用
       const epSnap = snapToEndpoints(pos.nx, pos.ny, ds.objects, null);
       const snapped = snapLineAngle(ds.startX, ds.startY, epSnap.nx, epSnap.ny);
       renderPreviewLine(key, ds.startX, ds.startY, snapped.x2, snapped.y2, ds.color, ds.sizeMM, ds.tool === 'arrow');
@@ -2588,7 +2419,6 @@ function setupDrawEvents(canvas, svg, key) {
       else if (snapped.snapped) showSnapIndicator(key, snapped.label);
       else hideSnapIndicator(key);
     } else if (ds.tool === 'rect' || ds.tool === 'ellipse' || ds.tool === 'square') {
-      // squareの場合は正方形プレビュー
       let ex2 = pos.nx, ey2 = pos.ny;
       if (ds.tool === 'square') {
         const dw = Math.abs(pos.nx - ds.startX);
@@ -2600,7 +2430,6 @@ function setupDrawEvents(canvas, svg, key) {
       const shapeType = ds.tool === 'square' ? 'rect' : ds.tool;
       renderPreviewShape(key, ds.startX, ds.startY, ex2, ey2, ds.color, ds.sizeMM, shapeType, ds.pattern);
     } else if (ds.tool === 'select' && ds.selectedId) {
-      // 選択中オブジェクトを移動（単体）
       if (ds._pendingMove) {
         const dist = Math.hypot(pos.nx - ds.startX, pos.ny - ds.startY);
         if (dist < 0.005) return;
@@ -2617,7 +2446,6 @@ function setupDrawEvents(canvas, svg, key) {
         obj.x2 += dx; obj.y2 += dy;
         ds.startX = pos.nx; ds.startY = pos.ny;
 
-        // 移動中の端点スナップ（線・矢印のみ。rect/ellipseは対角座標なので除外）
         if (obj.type === 'line' || obj.type === 'arrow') {
           const snap1 = snapToEndpoints(obj.x1, obj.y1, ds.objects, obj.id);
           const snap2 = snapToEndpoints(obj.x2, obj.y2, ds.objects, obj.id);
@@ -2640,7 +2468,6 @@ function setupDrawEvents(canvas, svg, key) {
         renderSVGObjects(key);
       }
     } else if (ds.tool === 'select' && !ds.selectedId && ds.selectedPenIds?.length) {
-      // ペンストロークのみ選択時の移動
       if (ds._pendingMove) {
         const dist = Math.hypot(pos.nx - ds.startX, pos.ny - ds.startY);
         if (dist < 0.005) return;
@@ -2655,7 +2482,6 @@ function setupDrawEvents(canvas, svg, key) {
       ds.startX = pos.nx; ds.startY = pos.ny;
       renderSelectedPenStrokes(key);
     } else if (ds.tool === 'select' && ds.selectedIds && ds.selectedIds.length > 1) {
-      // 複数選択オブジェクトを一括移動
       const dx = pos.nx - ds.startX;
       const dy = pos.ny - ds.startY;
       ds.objects.forEach(obj => {
@@ -2664,7 +2490,6 @@ function setupDrawEvents(canvas, svg, key) {
           obj.x2 += dx; obj.y2 += dy;
         }
       });
-      // 選択ペンストロークも一緒に移動
       if (ds.selectedPenIds?.length) {
         movePenStrokes(key, dx, dy);
         renderSelectedPenStrokes(key);
@@ -2682,7 +2507,6 @@ function setupDrawEvents(canvas, svg, key) {
     ds.drawing = false;
     ds._pendingMove = false;
 
-    // ペンストローク確定
     if (ds.tool === 'pen' && ds._currentStroke) {
       const pts = ds._currentStroke.points;
       if (pts.length >= 2) {
@@ -2698,7 +2522,6 @@ function setupDrawEvents(canvas, svg, key) {
       ds._currentStroke = null;
     }
 
-    // 範囲選択確定
     if (ds.tool === 'select' && ds.isRangeSelect) {
       ds.isRangeSelect = false;
       const x1 = Math.min(ds.startX, ds.lastX ?? ds.startX);
@@ -2706,7 +2529,6 @@ function setupDrawEvents(canvas, svg, key) {
       const x2 = Math.max(ds.startX, ds.lastX ?? ds.startX);
       const y2 = Math.max(ds.startY, ds.lastY ?? ds.startY);
       const dragDist = Math.hypot(x2 - x1, y2 - y1);
-      // タップ（ほぼ動いていない）→ 選択解除のみ
       if (dragDist < 0.02) {
         ds.selectedId  = null;
         ds.selectedIds = [];
@@ -2715,13 +2537,11 @@ function setupDrawEvents(canvas, svg, key) {
         renderSVGObjects(key);
         return;
       }
-      // 範囲内のSVGオブジェクトを全選択
       const inRange = ds.objects.filter(obj => {
         const ox1 = Math.min(obj.x1, obj.x2), oy1 = Math.min(obj.y1, obj.y2);
         const ox2 = Math.max(obj.x1, obj.x2), oy2 = Math.max(obj.y1, obj.y2);
         return ox1 >= x1 && oy1 >= y1 && ox2 <= x2 && oy2 <= y2;
       });
-      // 範囲内のペンストロークも選択
       const inRangePen = (ds.penStrokes||[]).filter(s => {
         const b = s.bbox;
         return b && b.x1 >= x1 && b.y1 >= y1 && b.x2 <= x2 && b.y2 <= y2;
@@ -2738,7 +2558,6 @@ function setupDrawEvents(canvas, svg, key) {
     }
     ds.isRangeSelect = false;
 
-    // changedTouchesから座標取得、なければlastX/lastYを使用
     let ex = ds.lastX ?? ds.startX;
     let ey = ds.lastY ?? ds.startY;
     try {
@@ -2767,7 +2586,6 @@ function setupDrawEvents(canvas, svg, key) {
       hideSnapIndicator(key);
       clearPreviewLine(key);
       renderSVGObjects(key);
-      // 損傷追加モード中なら引き出し線確定後に撮影ボタンを表示
       const wasDamageAdd = ds.damageAddMode;
       if (wasDamageAdd && dist > 0.01) {
         ds.damageAddMode = false;
@@ -2805,14 +2623,12 @@ function setupDrawEvents(canvas, svg, key) {
       clearPreviewLine(key);
       renderSVGObjects(key);
     }
-    // ペンストロークの移動が完了したらCanvas再描画
     if (ds.tool === 'select' && ds.selectedPenIds?.length) {
       redrawPenStrokes(key);
       renderSelectedPenStrokes(key);
     }
   };
 
-  // タッチキャンセル時もdrawingフラグをリセット
   canvas.addEventListener('touchcancel', () => {
     if (drawState[key]) {
       drawState[key].drawing = false;
@@ -2827,9 +2643,7 @@ function setupDrawEvents(canvas, svg, key) {
   const onLongPressStart = (e) => {
     const ds = drawState[key];
     const hasClip = !!(globalClipboard || globalClipboardPen || ds?.clipboard);
-    // selectツール、またはクリップボードがある場合は長押し有効
     if (ds?.tool !== 'select' && !hasClip) return;
-    // タッチ位置を記録（貼り付け先に使う）
     if (e.touches && e.touches[0]) {
       const p = getPos(e);
       longPressTouchPos = { nx: p.nx, ny: p.ny };
@@ -2844,13 +2658,11 @@ function setupDrawEvents(canvas, svg, key) {
       const hasClipPen = !!globalClipboardPen;
       const hasAnyClip = hasClipSVG || hasClipPen;
 
-      // 選択メニューを構築
       const items = [];
       if (hasSVGSel || hasPenSel) items.push({ label: '📋 コピー', action: 'copy' });
       if (hasAnyClip)              items.push({ label: '📌 貼り付け', action: 'paste' });
       if (items.length === 0) return;
 
-      // 既存メニューを削除
       document.querySelectorAll('.longpress-menu').forEach(el => el.remove());
 
       const canvas = document.getElementById(`drawcanvas-${key}`);
@@ -2890,7 +2702,6 @@ function setupDrawEvents(canvas, svg, key) {
       });
 
       document.body.appendChild(menu);
-      // 画面外タップで閉じる
       setTimeout(() => {
         const dismiss = () => { menu.remove(); document.removeEventListener('touchstart', dismiss); };
         document.addEventListener('touchstart', dismiss, { passive: true });
@@ -2916,7 +2727,6 @@ function setupDrawEvents(canvas, svg, key) {
 
 // ===== SVGオブジェクト描画 =====
 function makeDefs(svg, id, color, pattern) {
-  // パターン定義をdefsに追加
   let defs = svg.querySelector('defs');
   if (!defs) { defs = document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.prepend(defs); }
   const pid = `pat-${String(id).replace('.', '_')}`;
@@ -2932,14 +2742,12 @@ function makeDefs(svg, id, color, pattern) {
   pat.setAttribute('width','8'); pat.setAttribute('height','8');
 
   if (pattern === 'diag') {
-    // 斜め線（右下がり）
     const l = document.createElementNS('http://www.w3.org/2000/svg','line');
     l.setAttribute('x1','0'); l.setAttribute('y1','0');
     l.setAttribute('x2','8'); l.setAttribute('y2','8');
     l.setAttribute('stroke', color); l.setAttribute('stroke-width','1');
     pat.appendChild(l);
   } else if (pattern === 'hatch') {
-    // 網掛け（縦横）
     ['0,0,0,8','0,0,8,0'].forEach(pts => {
       const [x1,y1,x2,y2] = pts.split(',');
       const l = document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -2962,17 +2770,14 @@ function renderSVGObjects(key, _retry = 0) {
   if (!ds) return;
   svg.innerHTML = '';
 
-  // offsetWidth/Heightを優先（ズーム変換の影響を受けない）
   const W = canvas.offsetWidth  || canvas.getBoundingClientRect().width;
   const H = canvas.offsetHeight || canvas.getBoundingClientRect().height;
 
-  // W/Hが0の場合はレイアウト未確定→最大10回再試行
   if ((W === 0 || H === 0) && ds.objects?.length > 0) {
     if (_retry < 10) setTimeout(() => renderSVGObjects(key, _retry + 1), 150);
     return;
   }
 
-  // 選択が外れたら編集パネルを閉じる（ボタンで開く方式）
   if (!ds.selectedId) closeEditPanel();
 
   ds.objects.forEach(obj => {
@@ -2980,15 +2785,12 @@ function renderSVGObjects(key, _retry = 0) {
     const x2 = obj.x2 * W, y2 = obj.y2 * H;
     const sw = mmToPx(obj.sizeMM, 1);
     const isSel = ds.selectedId === obj.id;
-    // line/arrowは選択時も元の色を維持（端点ハンドルで識別）
     const strokeColor = (isSel && obj.type !== 'line' && obj.type !== 'arrow') ? '#60d0ff' : obj.color;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class','svg-obj' + (isSel ? ' selected' : ''));
-    // タッチはcanvasで処理するためpointer-events:none（回転ハンドルは個別にauto）
     g.style.pointerEvents = 'none';
 
-    // 回転: オブジェクトの中心を軸に回転
     const rot = obj.rotation || 0;
     const cx = (x1 + x2) / 2;
     const cy = (y1 + y2) / 2;
@@ -3014,12 +2816,9 @@ function renderSVGObjects(key, _retry = 0) {
         arr.setAttribute('fill','none'); arr.setAttribute('stroke-linecap','round');
         g.appendChild(arr);
 
-        // 損傷追加ラベルを引き出し線の始点付近に表示
         if (obj.label) {
           const fontSize = Math.max(W * 0.013, 10);
           const lines = obj.label.split('　');
-          // 始点側（x1,y1）の近くにテキストを配置
-          // 線の角度に応じてテキストをオフセット
           const offX = x1 < x2 ? -4 : 4;
           const anchor = x1 < x2 ? 'end' : 'start';
           lines.forEach((line, i) => {
@@ -3037,7 +2836,6 @@ function renderSVGObjects(key, _retry = 0) {
         }
       }
 
-      // ヒットエリア（非選択時のみ有効）
       const hit = document.createElementNS('http://www.w3.org/2000/svg','line');
       hit.setAttribute('x1',x1); hit.setAttribute('y1',y1);
       hit.setAttribute('x2',x2); hit.setAttribute('y2',y2);
@@ -3047,7 +2845,6 @@ function renderSVGObjects(key, _retry = 0) {
       hit.addEventListener('click', () => { ds.selectedId = ds.selectedId===obj.id?null:obj.id; renderSVGObjects(key); });
       g.appendChild(hit);
 
-      // 選択時：細い点線でハイライト（塗り潰しにならないよう細く）
       if (isSel) {
         const selLine = document.createElementNS('http://www.w3.org/2000/svg','line');
         selLine.setAttribute('x1',x1); selLine.setAttribute('y1',y1);
@@ -3074,7 +2871,6 @@ function renderSVGObjects(key, _retry = 0) {
       if (obj.pattern === 'solid') rect.setAttribute('fill-opacity', fillOpacity);
       g.appendChild(rect);
 
-      // ヒットエリア
       const hit = document.createElementNS('http://www.w3.org/2000/svg','rect');
       hit.setAttribute('x',rx-6); hit.setAttribute('y',ry-6);
       hit.setAttribute('width',rw+12); hit.setAttribute('height',rh+12);
@@ -3097,7 +2893,6 @@ function renderSVGObjects(key, _retry = 0) {
       if (obj.pattern === 'solid') el.setAttribute('fill-opacity', fillOpacity);
       g.appendChild(el);
 
-      // ヒットエリア（タッチはcanvasで処理するためpointer-events:none）
       const hit = document.createElementNS('http://www.w3.org/2000/svg','ellipse');
       hit.setAttribute('cx',cx); hit.setAttribute('cy',cy);
       hit.setAttribute('rx',rx+8); hit.setAttribute('ry',ry2+8);
@@ -3106,7 +2901,6 @@ function renderSVGObjects(key, _retry = 0) {
       g.appendChild(hit);
     }
 
-    // 選択ハンドル
     if (isSel) {
       if (obj.type === 'line' || obj.type === 'arrow') {
         // ===== 直線・矢印：端点ハンドルのみ =====
@@ -3115,13 +2909,11 @@ function renderSVGObjects(key, _retry = 0) {
           hg.style.pointerEvents = 'auto';
           hg.style.cursor = 'move';
 
-          // ヒットエリア
           const hitC = document.createElementNS('http://www.w3.org/2000/svg','circle');
           hitC.setAttribute('cx',hx); hitC.setAttribute('cy',hy);
           hitC.setAttribute('r', 24); hitC.setAttribute('fill','transparent');
           hg.appendChild(hitC);
 
-          // 見た目：塗りつぶし◆
           const dot = document.createElementNS('http://www.w3.org/2000/svg','rect');
           dot.setAttribute('x', hx-6); dot.setAttribute('y', hy-6);
           dot.setAttribute('width', 12); dot.setAttribute('height', 12);
@@ -3201,18 +2993,15 @@ function renderSVGObjects(key, _retry = 0) {
 
     svg.appendChild(g);
 
-    // 選択時: 回転ハンドル（rect/ellipseのみ）
     if (isSel && obj.type !== 'line' && obj.type !== 'arrow') {
       const hx = cx;
       const hy = Math.min(y1, y2) - 36;
 
-      // 回転ハンドル
       const rotGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
       rotGroup.setAttribute('data-rot', '1');
       rotGroup.style.cursor = 'grab';
       rotGroup.style.pointerEvents = 'auto';
 
-      // 外側の大きい透明ヒットエリア（タップしやすく）
       const rotHitArea = document.createElementNS('http://www.w3.org/2000/svg','circle');
       rotHitArea.setAttribute('cx', hx);
       rotHitArea.setAttribute('cy', hy);
@@ -3220,7 +3009,6 @@ function renderSVGObjects(key, _retry = 0) {
       rotHitArea.setAttribute('fill', 'transparent');
       rotGroup.appendChild(rotHitArea);
 
-      // 見た目のサークル
       const rotCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
       rotCircle.setAttribute('cx', hx);
       rotCircle.setAttribute('cy', hy);
@@ -3240,7 +3028,6 @@ function renderSVGObjects(key, _retry = 0) {
       rotText.textContent = '↻';
       rotGroup.appendChild(rotText);
 
-      // 「押しながらドラッグ」ヒント
       const hintText = document.createElementNS('http://www.w3.org/2000/svg','text');
       hintText.setAttribute('x', hx);
       hintText.setAttribute('y', hy - 26);
@@ -3259,7 +3046,6 @@ function renderSVGObjects(key, _retry = 0) {
       rotGroup.addEventListener('touchstart', onRotStart, { passive: false });
       svg.appendChild(rotGroup);
 
-      // 編集ボタン（✏️）- pointer-events:autoで個別に有効化
       const editGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
       editGroup.style.cursor = 'pointer';
       editGroup.style.pointerEvents = 'auto';
@@ -3351,7 +3137,6 @@ function renderPreviewShape(key, nx1, ny1, nx2, ny2, color, sizeMM, type, patter
   const sw = mmToPx(sizeMM, 1);
   const x1=nx1*W, y1=ny1*H, x2=nx2*W, y2=ny2*H;
 
-  // プレビュー用パターン（簡易）
   let fill = 'none';
   if (pattern === 'solid') fill = color;
 
@@ -3364,7 +3149,6 @@ function renderPreviewShape(key, nx1, ny1, nx2, ny2, color, sizeMM, type, patter
     el.setAttribute('fill', fill); el.setAttribute('fill-opacity','0.2');
     svg.appendChild(el);
   } else if (type === 'square') {
-    // 正方形プレビュー：枠＋対角線2本
     const bx=Math.min(x1,x2), by=Math.min(y1,y2);
     const bw=Math.abs(x2-x1), bh=Math.abs(y2-y1);
     const el = document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -3374,14 +3158,12 @@ function renderPreviewShape(key, nx1, ny1, nx2, ny2, color, sizeMM, type, patter
     el.setAttribute('stroke-dasharray','6 4');
     el.setAttribute('fill', fill); el.setAttribute('fill-opacity','0.15');
     svg.appendChild(el);
-    // 対角線1（左上→右下）
     const d1 = document.createElementNS('http://www.w3.org/2000/svg','line');
     d1.setAttribute('x1',bx); d1.setAttribute('y1',by);
     d1.setAttribute('x2',bx+bw); d1.setAttribute('y2',by+bh);
     d1.setAttribute('stroke',color); d1.setAttribute('stroke-width', sw * 0.6);
     d1.setAttribute('stroke-dasharray','3 4'); d1.setAttribute('opacity','0.5');
     svg.appendChild(d1);
-    // 対角線2（右上→左下）
     const d2 = document.createElementNS('http://www.w3.org/2000/svg','line');
     d2.setAttribute('x1',bx+bw); d2.setAttribute('y1',by);
     d2.setAttribute('x2',bx); d2.setAttribute('y2',by+bh);
@@ -3406,7 +3188,6 @@ function setTool(tool, key) {
   if (!ds) return;
   ds.tool = tool;
   ds.selectedId = null;
-  // 損傷追加モード中に別ツールを選んだら解除
   if (ds.damageAddMode && tool !== 'arrow') {
     ds.damageAddMode = false;
     const btn = document.getElementById(`tool-damageadd-${key}`);
@@ -3416,7 +3197,6 @@ function setTool(tool, key) {
     const btn = document.getElementById(`tool-${t}-${key}`);
     if (btn) btn.classList.toggle('active', t === tool);
   });
-  // 長方形/正方形は同じボタン
   const rectBtn = document.getElementById(`tool-rect-${key}`);
   if (rectBtn) {
     rectBtn.classList.toggle('active', tool === 'rect' || tool === 'square');
@@ -3435,7 +3215,6 @@ function setTool(tool, key) {
 function setDamageAddMode(key) {
   const ds = drawState[key];
   if (!ds) return;
-  // すでに損傷追加モード中なら解除してscrollに戻す
   if (ds.damageAddMode) {
     ds.damageAddMode = false;
     const btn = document.getElementById(`tool-damageadd-${key}`);
@@ -3450,7 +3229,6 @@ function setDamageAddMode(key) {
   showToast('📍 図面上に引き出し線を描いてください', 'info');
 }
 
-// 引き出し線確定後に撮影促進バナーを表示（iOSはtouchendから直接input.clickできないため）
 let _damageAddDrawKey = null; // 損傷追加で描いた引き出し線のdrawKey
 
 function showDamageCameraPrompt(drawKey) {
@@ -3482,14 +3260,12 @@ function showDamageCameraPrompt(drawKey) {
   `;
   document.body.appendChild(prompt);
 
-  // 10秒後に自動消去
   setTimeout(() => {
     const el = document.getElementById('damage-camera-prompt');
     if (el) el.remove();
   }, 10000);
 }
 
-// 長方形/正方形をトグル
 function toggleRectSquare(key) {
   const ds = drawState[key];
   if (!ds) return;
@@ -3510,13 +3286,11 @@ function hitTest(nx, ny, objects, canvas) {
   const px = nx * W, py = ny * H;
   const THRESH = 28; // タップ許容範囲（px）小さいオブジェクトも選択しやすいよう拡大
 
-  // 後ろから（前面優先）
   for (let i = objects.length - 1; i >= 0; i--) {
     const o = objects[i];
     const x1 = o.x1*W, y1 = o.y1*H;
     const x2 = o.x2*W, y2 = o.y2*H;
 
-    // 回転考慮（中心を軸に逆回転してローカル座標で判定）
     const rot = o.rotation || 0;
     let lpx = px, lpy = py;
     if (rot !== 0) {
@@ -3573,7 +3347,6 @@ function undoDraw(key) {
   const ds = drawState[key];
   if (!ds) return;
 
-  // 統合履歴から1つ戻す
   if (!ds.history) ds.history = [];
   if (ds.history.length === 0) {
     showToast('これ以上戻せません', '');
@@ -3582,12 +3355,10 @@ function undoDraw(key) {
 
   const last = ds.history.pop();
   if (last.type === 'object') {
-    // オブジェクト操作を戻す
     ds.objects = last.objects.map(o => ({...o}));
     ds.selectedId = null;
     renderSVGObjects(key);
   } else if (last.type === 'pen') {
-    // ペン操作を戻す
     const canvas = document.getElementById(`drawcanvas-${key}`);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -3598,7 +3369,6 @@ function undoDraw(key) {
       img.src = last.penData;
     }
     ds.savedPenData = last.penData;
-    // penStrokesも復元
     if (last.penStrokes) {
       ds.penStrokes = last.penStrokes.map(s=>({...s,points:[...s.points]}));
     }
@@ -3609,7 +3379,6 @@ function undoDraw(key) {
 
 // ===== オブジェクト操作 =====
 
-// ページをまたいで使えるグローバルクリップボード
 let globalClipboard = null;
 let globalClipboardMulti = null;
 
@@ -3617,13 +3386,11 @@ function deleteSelected(key) {
   const ds = drawState[key];
   if (!ds) return;
   let deleted = 0;
-  // Undo記録
   if ((ds.selectedIds?.length > 0) || ds.selectedId || ds.selectedPenIds?.length) {
     if (!ds.history) ds.history = [];
     ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
     if (ds.history.length > 50) ds.history.shift();
   }
-  // 複数選択オブジェクト削除
   const ids = new Set([
     ...(ds.selectedIds || []),
     ...(ds.selectedId ? [ds.selectedId] : [])
@@ -3634,7 +3401,6 @@ function deleteSelected(key) {
     ds.selectedId = null;
     ds.selectedIds = [];
   }
-  // ペンストローク削除
   if (ds.selectedPenIds?.length) {
     deleted += ds.selectedPenIds.length;
     deletePenStrokes(key);
@@ -3652,7 +3418,6 @@ function copySelected(key) {
     ...(ds.selectedId ? [ds.selectedId] : [])
   ]);
   if (ids.size === 0) { showToast('オブジェクトを選択してください','error'); return; }
-  // 複数の場合はglobalClipboardMultiに保存
   const objs = ds.objects.filter(o => ids.has(o.id));
   if (objs.length === 1) {
     globalClipboard = { ...objs[0] };
@@ -3686,7 +3451,6 @@ function pasteObj(key) {
   renderSVGObjects(key);
 }
 
-// タップ位置に貼り付け
 function pasteObjAtPos(key, nx, ny) {
   const ds = drawState[key];
   if (!ds) return;
@@ -3694,7 +3458,6 @@ function pasteObjAtPos(key, nx, ny) {
   ds.history.push({ type: 'object', objects: ds.objects.map(o => ({...o})) });
   if (ds.history.length > 50) ds.history.shift();
 
-  // 複数コピーの貼り付け
   if (globalClipboardMulti?.length) {
     const xs = globalClipboardMulti.map(o => (o.x1+o.x2)/2);
     const ys = globalClipboardMulti.map(o => (o.y1+o.y2)/2);
@@ -3734,20 +3497,17 @@ function pasteObjAtPos(key, nx, ny) {
 }
 
 // ===== 回転 =====
-// オブジェクトの回転角度を相対的に変化させる
 function rotateSelected(key, deltaDeg) {
   const ds = drawState[key];
   if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
   const obj = ds.objects.find(o => o.id === ds.selectedId);
   if (!obj) return;
   obj.rotation = ((obj.rotation || 0) + deltaDeg + 360) % 360;
-  // 入力欄も更新
   const input = document.getElementById(`rot-input-${key}`);
   if (input) input.value = Math.round(obj.rotation);
   renderSVGObjects(key);
 }
 
-// 角度を直接指定して回転
 function rotateToAngle(key, angleDeg) {
   const ds = drawState[key];
   if (!ds || !ds.selectedId) { showToast('オブジェクトを選択してください','error'); return; }
@@ -3756,8 +3516,6 @@ function rotateToAngle(key, angleDeg) {
   obj.rotation = ((parseFloat(angleDeg) || 0) + 360) % 360;
   renderSVGObjects(key);
 }
-
-
 
 // ===== 一時保存（localStorageへ即時保存）=====
 function saveTempData() {
@@ -3773,10 +3531,8 @@ function saveTempData() {
       drawState: drawStateExport,
     };
 
-    // localStorage容量超過対策：まず写真込みで試み、失敗したら写真なしで保存
     const trySet = (data) => {
       const json = JSON.stringify(data);
-      // 概算サイズ確認（5MBを超えそうなら先に警告）
       if (json.length > 4.5 * 1024 * 1024) throw new Error('SIZE_OVER');
       localStorage.setItem('bridge_temp_save', json);
     };
@@ -3784,7 +3540,6 @@ function saveTempData() {
     try {
       trySet(tempData);
     } catch(e) {
-      // 写真を除いて再試行
       const dataNoPhotos = { ...tempData, photos: {} };
       localStorage.setItem('bridge_temp_save', JSON.stringify(dataNoPhotos));
       const now = new Date();
@@ -3812,11 +3567,9 @@ async function saveWorkData() {
   try {
     const drawStateExport = _collectPenData();
 
-    // 写真を圧縮（複数枚対応・長辺1280px・JPEG75%）
     showToast('🖼️ 写真を圧縮中...', '');
     const compressedPhotos = {};
     for (const [key, raw] of Object.entries(state.photos || {})) {
-      // normalizePhotoListのインライン版（依存排除）
       let list = [];
       if (Array.isArray(raw))             list = raw.map(p => typeof p === 'string' ? { dataURL: p } : p).filter(p => p?.dataURL);
       else if (typeof raw === 'string' && raw) list = [{ dataURL: raw }];
@@ -3840,10 +3593,8 @@ async function saveWorkData() {
 
     const zip = new JSZip();
 
-    // 作業データ（JSON）
     zip.file('work_data.json', JSON.stringify(saveData));
 
-    // PDFをZIPに直接バイナリ格納
     if (state.pdfData) {
       try {
         showToast('📄 PDF同梱中...', '');
@@ -3881,9 +3632,6 @@ async function saveWorkData() {
   }
 }
 
-
-
-// 画像圧縮ユーティリティ
 function compressImage(dataURL, quality, maxWidth) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -3903,7 +3651,6 @@ function compressImage(dataURL, quality, maxWidth) {
 function importData(input) {
   const file = input.files[0];
 
-  // localStorageに一時保存データがある場合は案内を表示
   const tempRaw = localStorage.getItem('bridge_temp_save');
   if (!file && tempRaw) {
     try {
@@ -3924,7 +3671,6 @@ function importData(input) {
         return;
       }
     } catch(e) {
-      // 壊れていたら無視してファイル選択へ
     }
   }
 
@@ -3935,11 +3681,8 @@ function importData(input) {
 
   if (isZip) {
     JSZip.loadAsync(file).then(async (zip) => {
-      // ZIP内のファイル一覧を確認
       const fileList = Object.keys(zip.files);
-      console.log('ZIP内ファイル一覧:', fileList);
 
-      // JSONファイルを探す（複数パターン対応）
       let jsonFile = zip.file('work_data.json');
       if (!jsonFile) jsonFile = zip.file('作業データ.json');
       if (!jsonFile) {
@@ -3955,7 +3698,6 @@ function importData(input) {
       const jsonStr = await jsonFile.async('string');
       const data    = JSON.parse(jsonStr);
 
-      // PDFを取得
       let pdfArrayBuffer = null;
       const pdfFiles = zip.file(/\.pdf$/i);
       if (pdfFiles.length > 0) {
@@ -3968,7 +3710,6 @@ function importData(input) {
       showToast(`❌ ZIP読み込み失敗: ${err.message}`, 'error');
     });
   } else if (isJson) {
-    // JSONファイルの場合（旧形式対応）
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
@@ -3980,7 +3721,6 @@ function importData(input) {
     };
     reader.readAsText(file);
   } else {
-    // 拡張子不明の場合はZIPとして試みる
     JSZip.loadAsync(file).then(async (zip) => {
       const fileList  = Object.keys(zip.files);
       let jsonFile    = zip.file('work_data.json');
@@ -4006,7 +3746,6 @@ function importData(input) {
   input.value = '';
 }
 
-// データ適用（ZIP・JSON共通）
 async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   if (!data.version || !data.photos) {
     showToast('❌ 対応していないファイル形式です', 'error');
@@ -4027,11 +3766,9 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
   );
   if (!ok) return;
 
-  // 写真・書き込みを統合
   Object.assign(state.photos,   data.photos   || {});
   Object.assign(state.drawings, data.drawings  || {});
 
-  // drawStateを復元
   if (data.drawState) {
     for (const [key, ds] of Object.entries(data.drawState)) {
       if (!drawState[key]) {
@@ -4053,7 +3790,6 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
       if (ds.savedPenData && !drawState[key].savedPenData) {
         drawState[key].savedPenData = ds.savedPenData;
       }
-      // 既にCanvasがDOM上に存在する場合は即座に再描画
       const existingCanvas = document.getElementById(`drawcanvas-${key}`);
       if (existingCanvas && existingCanvas.width > 0) {
         const penData = drawState[key].savedPenData;
@@ -4072,7 +3808,6 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
     }
   }
 
-  // PDFを復元（ArrayBuffer優先・Base64フォールバック）
   if (pdfArrayBuffer || pdfBase64) {
     try {
       showToast('📄 PDFを復元中...', '');
@@ -4106,7 +3841,6 @@ async function applyImportData(data, pdfBase64 = null, pdfArrayBuffer = null) {
 
   showToast(`✅ 写真${photoCount}枚・書き込み${drawingCount}ページを取り込みました`, 'success');
 
-  // 現在ビューア画面が開いている場合はSVGを再描画
   for (const key of Object.keys(drawState)) {
     const svg = document.getElementById(`drawsvg-${key}`);
     if (svg) renderSVGObjects(key);
@@ -4139,7 +3873,6 @@ function toggleTG7Mode() {
   _tg7ModeOn = !_tg7ModeOn;
   const btn = document.getElementById('tg7-mode-btn');
   if (_tg7ModeOn) {
-    // 接続URLを確認してポーリング開始
     _tg7BaseURL = (document.getElementById('sd-url-input')?.value || 'http://192.168.0.10').trim().replace(/\/$/, '');
     btn.textContent = '📷 TG-7 ON';
     btn.style.background = 'var(--accent)';
@@ -4156,9 +3889,7 @@ function toggleTG7Mode() {
   }
 }
 
-// ポーリング開始：既存ファイルを記録してから新着監視
 async function _tg7StartPolling() {
-  // 既存ファイルを初期スキャンして既知セットに登録
   try {
     const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
     if (photos) photos.forEach(p => _tg7KnownFiles.add(p.name));
@@ -4182,7 +3913,6 @@ async function _tg7Poll() {
     const newPhotos = photos.filter(p => !_tg7KnownFiles.has(p.name));
     if (newPhotos.length === 0) return;
 
-    // 最新の1枚を取り込み
     const latest = newPhotos[newPhotos.length - 1];
     _tg7KnownFiles.add(latest.name);
     await _importSDPhotoToSlot(latest.url, latest.name, _tg7WaitingSlot);
@@ -4190,12 +3920,10 @@ async function _tg7Poll() {
   } catch(e) {}
 }
 
-// TG-7モード時の撮影ボタン処理
 function popupCapturePhotoTG7(addMode) {
   if (!_popupSlotKey) return;
   _tg7WaitingSlot = _popupSlotKey;
 
-  // ポップアップの「撮影エリア」に待機中UIを表示
   const noneEl = document.getElementById('popup-current-none');
   if (noneEl) {
     noneEl.innerHTML = `
@@ -4213,13 +3941,11 @@ function popupCapturePhotoTG7(addMode) {
 
 function _tg7CancelWait() {
   _tg7WaitingSlot = null;
-  // ポップアップを再描画
   const slots = DAMAGE_PHOTO_SLOTS.filter(s => !s.isNON);
   const slot  = slots.find(s => s.key === _popupSlotKey);
   if (slot) updatePopup(slot);
 }
 
-// 指定スロットに写真を取り込む共通関数
 async function _importSDPhotoToSlot(url, name, slotKey) {
   try {
     const resp = await fetch(url, { mode: 'cors' });
@@ -4254,7 +3980,6 @@ async function _importSDPhotoToSlot(url, name, slotKey) {
   }
 }
 
-// ポップアップから「デジカメから取得」を押したとき
 function openSDModalForPopup() {
   _sdFromPopup = true;
   showSDCardModal();
@@ -4267,8 +3992,6 @@ function showSDCardModal() {
   document.getElementById('sd-assign-panel').style.display = 'none';
   _sdSelectedPhotoURL = null;
 
-  // ポップアップからの場合は割り当てパネルを非表示（自動でポップアップスロットに入れる）
-  // 写真番号スロットをセレクトボックスに設定（メニューからの通常利用）
   const select = document.getElementById('sd-slot-select');
   select.innerHTML = '';
   const allSlots = [...SURVEY_PHOTO_SLOTS, ...DAMAGE_PHOTO_SLOTS];
@@ -4276,7 +3999,6 @@ function showSDCardModal() {
     const opt = document.createElement('option');
     opt.value = slot.key;
     opt.textContent = `No.${slot.prevNo}${slot.isNON ? ' (NON)' : ''}`;
-    // ポップアップ経由の場合は現在スロットを選択状態にする
     if (_sdFromPopup && _popupSlotKey && slot.key === _popupSlotKey) opt.selected = true;
     select.appendChild(opt);
   });
@@ -4288,7 +4010,6 @@ function switchSDTab(tab) {
   _sdCurrentTab = tab;
   const isTG7 = tab === 'tg7';
 
-  // タブボタンの見た目
   const tg7Btn = document.getElementById('sd-tab-tg7');
   const faBtn  = document.getElementById('sd-tab-flashair');
   if (tg7Btn) {
@@ -4302,7 +4023,6 @@ function switchSDTab(tab) {
     faBtn.style.border     = !isTG7 ? 'none' : '1px solid var(--border)';
   }
 
-  // ヒント・デフォルトURL
   const hintTG7 = document.getElementById('sd-hint-tg7');
   const hintFA  = document.getElementById('sd-hint-flashair');
   if (hintTG7) hintTG7.style.display = isTG7 ? 'block' : 'none';
@@ -4316,7 +4036,6 @@ function switchSDTab(tab) {
       : '例: http://flashair/ または http://192.168.0.1/';
   }
 
-  // リセット
   document.getElementById('sd-status').textContent = '';
   document.getElementById('sd-photo-list').innerHTML = '';
   document.getElementById('sd-assign-panel').style.display = 'none';
@@ -4350,7 +4069,6 @@ async function connectSDCard() {
     status.textContent = `✅ ${photos.length}枚の写真が見つかりました。タップして選択してください`;
     status.style.color = 'var(--green)';
 
-    // 写真一覧を表示（新着順）
     photos.reverse().forEach(photo => {
       const div = document.createElement('div');
       div.style.cssText = 'cursor:pointer;border:2px solid var(--border);border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--surface2);display:flex;align-items:center;justify-content:center;position:relative;';
@@ -4375,17 +4093,13 @@ async function connectSDCard() {
   }
 }
 
-// TG-7 (OLYMPUS) 写真一覧取得
-// TG-7はHTTPサーバーとして動作し、/DCIM以下をブラウザで参照できる
 async function _fetchTG7Photos(baseURL, status) {
   const photos = [];
 
-  // DCIM直下のフォルダ一覧を取得（HTMLをパース）
   const dcimResp = await fetch(`${baseURL}/DCIM/`, { mode: 'cors' });
   if (!dcimResp.ok) throw new Error('DCIM取得失敗');
   const dcimHTML = await dcimResp.text();
 
-  // フォルダ名を抽出（例: 100OLYMP/）
   const folderMatches = [...dcimHTML.matchAll(/href="([^"]+\/)"(?!\.\.)/gi)];
   const folders = folderMatches
     .map(m => m[1].replace(/^.*\//, ''))  // パス部分を除去
@@ -4393,7 +4107,6 @@ async function _fetchTG7Photos(baseURL, status) {
     .map(f => f.replace(/\/$/, ''));
 
   if (folders.length === 0) {
-    // フォルダが見つからない場合、DCIM直下を直接試す
     folders.push('');
   }
 
@@ -4419,7 +4132,6 @@ async function _fetchTG7Photos(baseURL, status) {
   return photos;
 }
 
-// FlashAir 写真一覧取得
 async function _fetchFlashAirPhotos(baseURL, status) {
   const photos = [];
 
@@ -4439,7 +4151,6 @@ async function _fetchFlashAirPhotos(baseURL, status) {
     }
   }
 
-  // サブディレクトリ探索
   if (photos.length === 0) {
     const subText = text;
     const dirs = subText.split('\n')
@@ -4474,7 +4185,6 @@ function selectSDPhoto(url, name, el) {
   _sdSelectedPhotoURL = url;
 
   if (_sdFromPopup) {
-    // ポップアップ経由：確認なしで即取り込み
     _importSDPhotoToSlot(url, name, _popupSlotKey);
   } else {
     document.getElementById('sd-assign-panel').style.display = 'block';
@@ -4482,7 +4192,6 @@ function selectSDPhoto(url, name, el) {
   }
 }
 
-// ポップアップスロットへ直接取り込み
   const slotKey = document.getElementById('sd-slot-select').value;
   if (!slotKey) return;
 
@@ -4527,24 +4236,19 @@ async function saveDraw(key, pageNum) {
   ctx.scale(dpr, dpr);
 
   try {
-    // 1. ベースPDFページを描画
     if (baseEl && baseEl.src) {
       const baseImg = await loadImage(baseEl.src);
       ctx.drawImage(baseImg, 0, 0, W, H);
     }
 
-    // 2. フリーハンドキャンバスを重ねる
     ctx.drawImage(canvas, 0, 0, W, H);
 
-    // 3. SVGオブジェクトを直接Canvasに描画（確実な合成）
     if (svgEl) {
-      // SVGにviewBoxとサイズを設定してから合成
       const svgClone = svgEl.cloneNode(true);
       svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       svgClone.setAttribute('width',  W);
       svgClone.setAttribute('height', H);
       svgClone.setAttribute('viewBox', `0 0 ${W} ${H}`);
-      // pointer-eventsをリセット
       svgClone.style.pointerEvents = 'none';
 
       const svgStr  = new XMLSerializer().serializeToString(svgClone);
@@ -4571,12 +4275,10 @@ async function saveDraw(key, pageNum) {
 
   } catch(err) {
     console.error('saveDraw error:', err);
-    // フォールバック：キャンバスのみ保存
     state.drawings[key] = exportCanvas.toDataURL('image/png');
     showToast('💾 保存しました（一部省略）', 'success');
   }
 }
-
 
 // ===== 写真ビューア =====
 function renderPhotoViewer(item, tabs, content) {
@@ -4584,11 +4286,9 @@ function renderPhotoViewer(item, tabs, content) {
   const isDamage10 = item.key === 's10';
   const slots = isSurvey3 ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
 
-  // タブなし・単一セクション
   const section = document.createElement('div');
   section.className = 'viewer-section active photo-section';
 
-  // ① 前回調書アコーディオン
   const prevId = `prev-body-${item.key}`;
   let prevPagesHTML = item.pages.map(p => `
     <div class="page-card">
@@ -4598,7 +4298,6 @@ function renderPhotoViewer(item, tabs, content) {
     </div>
   `).join('');
 
-  // ② 撮影忘れ警告
   const missingRequired = slots.filter(s => s.required && !state.photos[s.key]);
   const missingAlert = `
     <div class="missing-alert ${missingRequired.length > 0 ? 'show' : ''}" id="missing-${item.key}">
@@ -4607,10 +4306,8 @@ function renderPhotoViewer(item, tabs, content) {
       ${missingRequired.slice(0,3).map(s=>s.label).join('、')}${missingRequired.length > 3 ? '…' : ''}</p>
     </div>`;
 
-  // ③ フィルタタブ
   let filterHTML = '';
 
-  // その３・その１０共通：径間タブを生成
   const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
   const spanTabsHTML = spans.length > 1 ? `
     <div class="photo-filter-tabs" style="margin-bottom:4px;">
@@ -4622,10 +4319,8 @@ function renderPhotoViewer(item, tabs, content) {
     </div>` : '';
 
   if (isSurvey3) {
-    // その３：径間タブのみ
     filterHTML = spanTabsHTML;
   } else if (isDamage10) {
-    // その１０：径間タブ + NON/損傷タブ
     filterHTML = `
       ${spanTabsHTML}
       <div class="photo-filter-tabs">
@@ -4634,7 +4329,6 @@ function renderPhotoViewer(item, tabs, content) {
       </div>`;
   }
 
-  // ④ ヘッダー（枚数表示）
   const captured = slots.filter(s => state.photos[s.key]).length;
   const headerHTML = `
     <div class="photo-section-header">
@@ -4673,7 +4367,6 @@ function renderPhotoViewer(item, tabs, content) {
   `;
   content.appendChild(section);
 
-  // 前回調書ページを非同期でロード
   item.pages.forEach(async p => {
     const img = await getPageImage(p);
     if (img) {
@@ -4688,12 +4381,9 @@ function renderPhotoViewer(item, tabs, content) {
     }
   });
 
-  // 各スロットの前回写真を非同期ロード
   loadPrevPhotosForSlots(slots);
-  // グリッドにスワイプを付与
   setTimeout(() => attachAllGridSwipes(item.key), 100);
 
-  // 複数径間の場合は初期表示を1径間目のみに
   const allSpans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
   if (allSpans.length > 1) {
     photoFilter.span = allSpans[0];
@@ -4710,21 +4400,17 @@ function togglePrevRecord(id) {
   const body = document.getElementById(id);
   if (!body) return;
   body.classList.toggle('open');
-  // 矢印の向きを変える
   const key = id.replace('prev-body-','');
   const arrow = document.getElementById(`prev-arrow-${key}`);
   if (arrow) arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
 }
 
-// 前回写真キャッシュ
 const prevPhotoCache = {};
 
-// pdfplumberで計測した正規化座標でページ画像から写真を切り抜く
 async function getPrevPhotoForSlot(slot) {
   if (prevPhotoCache[slot.key]) return prevPhotoCache[slot.key];
   if (!slot.prevPage || !slot.crop || !state.pdfDoc) return null;
 
-  // ページを高解像度でレンダリング
   const pageImg = await getPageImage(slot.prevPage, 2.0);
   if (!pageImg) return null;
 
@@ -4735,7 +4421,6 @@ async function getPrevPhotoForSlot(slot) {
       const H = img.naturalHeight;
       const c = slot.crop;
 
-      // 正規化座標をピクセルに変換
       const sx = c.x * W;
       const sy = c.y * H;
       const sw = c.w * W;
@@ -4748,7 +4433,6 @@ async function getPrevPhotoForSlot(slot) {
 
       const dataURL = canvas.toDataURL('image/jpeg', 0.85);
       prevPhotoCache[slot.key] = dataURL;
-      // キャッシュ上限（最大30件）
       const cacheKeys = Object.keys(prevPhotoCache);
       if (cacheKeys.length > 20) delete prevPhotoCache[cacheKeys[0]];
       resolve(dataURL);
@@ -4758,7 +4442,6 @@ async function getPrevPhotoForSlot(slot) {
   });
 }
 
-// スロットごとの表示中インデックス管理
 const _slotPhotoIndex = {};
 
 function setSlotPhotoIndex(slotKey, idx) {
@@ -4778,7 +4461,6 @@ function setSlotPhotoIndex(slotKey, idx) {
   const prevBtn = wrap.querySelector('.curr-nav-prev');
   const nextBtn = wrap.querySelector('.curr-nav-next');
 
-  // スライドアニメーション
   if (img && stage) {
     const dir = safeIdx >= prevIdx ? 1 : -1;
     img.style.transition = 'none';
@@ -4826,7 +4508,6 @@ function renderPhotoSlot(slot, sectionKey) {
     ? `<span class="photo-card-status done">✓ 撮影済</span>`
     : `<span class="photo-card-status">未撮影</span>`;
 
-  // 今回撮影エリア
   let currHTML;
   if (hasPhoto) {
     const dotsHTML = photoList.length > 1
@@ -4882,7 +4563,6 @@ function renderPhotoSlot(slot, sectionKey) {
   `;
 }
 
-// 前回写真を非同期でロードしてスロットに埋め込む
 async function loadPrevPhotosForSlots(slots) {
   for (const slot of slots) {
     if (!slot.prevPage) continue;
@@ -4901,7 +4581,6 @@ async function loadPrevPhotosForSlots(slots) {
 }
 
 function deleteOnePhoto(slotKey, idx, evtOrSectionKey) {
-  // 引数がEventの場合はsectionKeyをDOMから取得
   let sectionKey;
   if (evtOrSectionKey && typeof evtOrSectionKey === 'object' && evtOrSectionKey.target) {
     const card = evtOrSectionKey.target.closest('[data-section]');
@@ -4915,7 +4594,6 @@ function deleteOnePhoto(slotKey, idx, evtOrSectionKey) {
     if (existing.length === 0) {
       delete state.photos[slotKey];
     } else {
-      // 削除後インデックスを調整
       _slotPhotoIndex[slotKey] = Math.min(idx, existing.length - 1);
     }
   } else {
@@ -4946,7 +4624,6 @@ function deletePhotoAndRefresh(slotKey, sectionKey) {
   showToast('写真を削除しました','');
 }
 
-// 現在のフィルタ状態を保持
 const photoFilter = { span: 0, type: 'damage' };
 
 function filterBySpan(span, sectionKey, evt) {
@@ -4957,7 +4634,6 @@ function filterBySpan(span, sectionKey, evt) {
 
   photoFilter.span = span;
   applyPhotoFilter(sectionKey);
-  // 追加写真グリッドも径間連動
   renderExtraPhotoGrid(sectionKey);
 }
 
@@ -4981,10 +4657,8 @@ function applyPhotoFilter(sectionKey) {
     const slot = slots[i];
     if (!slot) return;
 
-    // 径間フィルタ（0=全て）
     const spanOK = photoFilter.span === 0 || (slot.span || 1) === photoFilter.span;
 
-    // NON/損傷フィルタ
     const isNON = slot.isNON || (slot.prevNo >= 1000);
     let typeOK = true;
     if (photoFilter.type === 'damage') typeOK = !isNON;
@@ -4995,13 +4669,10 @@ function applyPhotoFilter(sectionKey) {
 }
 
 // ===== カメラ撮影 =====
-// バグ修正：input要素を毎回新規作成することでonchange競合・スロット混入を防ぐ
 function capturePhoto(slotKey, sectionKey, addMode = false) {
-  // 古いinputを削除
   const old = document.getElementById('camera-input');
   if (old) old.remove();
 
-  // 新しいinputを生成
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
@@ -5009,10 +4680,8 @@ function capturePhoto(slotKey, sectionKey, addMode = false) {
   input.id = 'camera-input';
   input.style.display = 'none';
 
-  // この時点のslotKey/sectionKey/addModeをクロージャで固定（競合防止）
   input.addEventListener('change', function(e) {
     handleCameraCapture(e, slotKey, sectionKey, addMode);
-    // 使用後は削除
     input.remove();
   }, { once: true });
 
@@ -5028,7 +4697,6 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
     const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
     const slot = slots.find(s => s.key === slotKey) || { key: slotKey || `auto_${Date.now()}`, label: '撮影写真', required: false };
 
-    // 複数枚対応：配列で管理（圧縮してからメモリに保存）
     compressImage(ev.target.result, 0.75, 1280).then(compressed => {
     const newEntry = { dataURL: compressed, label: slot.label };
     const existing = state.photos[slot.key];
@@ -5042,18 +4710,15 @@ function handleCameraCapture(e, slotKey, sectionKey, addMode) {
     }
     showToast('✅ 写真を保存しました', 'success');
 
-    // グリッドを更新
     const grid = document.getElementById(`photo-grid-${sectionKey}`);
     if (grid) {
       grid.innerHTML = slots.map(s => renderPhotoSlot(s, sectionKey)).join('');
       loadPrevPhotosForSlots(slots);
       attachAllGridSwipes(sectionKey);
-      // 撮影したスロットを現在のインデックスに合わせる
       const list = state.photos[slot.key];
       if (Array.isArray(list) && list.length > 1) {
         setSlotPhotoIndex(slot.key, list.length - 1);
       }
-      // 径間タブのフィルター状態を維持（全書き直し後に再適用）
       applyPhotoFilter(sectionKey);
     }
     updatePhotoProgress();
@@ -5082,7 +4747,6 @@ async function downloadAll() {
 
   showToast('📦 データを収集中...', '');
 
-  // 全drawStateからZIP用の合成画像を生成（DOM非依存）
   const drawEntries = []; // { key, pnum, dataURL }
 
   for (const [key, ds] of Object.entries(drawState)) {
@@ -5093,7 +4757,6 @@ async function downloadAll() {
     const m    = key.match(/p(\d+)$/);
     const pnum = m ? parseInt(m[1]) : null;
 
-    // PDFページを高解像度で取得
     let pdfPageCanvas = null;
     if (pnum && state.pdfDoc) {
       try {
@@ -5109,14 +4772,12 @@ async function downloadAll() {
       } catch(e) { pdfPageCanvas = null; }
     }
 
-    // 合成キャンバス
     const W = pdfPageCanvas?.width  || 1200;
     const H = pdfPageCanvas?.height || 1600;
     const cv  = document.createElement('canvas');
     cv.width  = W; cv.height = H;
     const ctx = cv.getContext('2d');
 
-    // 1. PDFページを描画
     if (pdfPageCanvas) {
       ctx.drawImage(pdfPageCanvas, 0, 0);
     } else {
@@ -5124,7 +4785,6 @@ async function downloadAll() {
       ctx.fillRect(0, 0, W, H);
     }
 
-    // 2. ペンデータを重ねる
     if (ds.savedPenData) {
       try {
         const penImg = await loadImage(ds.savedPenData);
@@ -5132,7 +4792,6 @@ async function downloadAll() {
       } catch(e) {}
     }
 
-    // 3. SVGオブジェクトをCanvasに直接描画（DOM上のSVG要素に依存しない）
     if (ds.objects && ds.objects.length > 0) {
       await drawObjectsToCanvas(ctx, ds.objects, W, H);
     }
@@ -5145,7 +4804,6 @@ async function downloadAll() {
     return;
   }
 
-  // 写真を圧縮（長辺1280px・JPEG75%）
   showToast('🖼️ 写真を圧縮中...', '');
   const compressedPhotoMap = {};
   for (const key of photoKeys) {
@@ -5165,7 +4823,6 @@ async function downloadAll() {
   try {
     const zip = new JSZip();
 
-    // ① 書き込み済み図面（種別ごとに振り分け）
     if (drawEntries.length > 0) {
       for (const entry of drawEntries) {
         const { key, pnum, dataURL } = entry;
@@ -5179,7 +4836,6 @@ async function downloadAll() {
       }
     }
 
-    // ② 現地状況写真（その3）
     const surveyPhotos = photoKeys.filter(k => SURVEY_PHOTO_SLOTS.find(s => s.key === k));
     if (surveyPhotos.length > 0) {
       const f3 = zip.folder('その３_現地状況写真');
@@ -5197,7 +4853,6 @@ async function downloadAll() {
       }
     }
 
-    // ③ 損傷写真（その10）
     const damagePhotos = photoKeys.filter(k => DAMAGE_PHOTO_SLOTS.find(s => s.key === k));
     if (damagePhotos.length > 0) {
       const f10d = zip.folder('その１０_損傷写真/損傷');
@@ -5217,7 +4872,6 @@ async function downloadAll() {
       }
     }
 
-    // ④ 追加写真
     const extraPhotos = state.extraPhotos || [];
     if (extraPhotos.length > 0) {
       for (const ep of extraPhotos) {
@@ -5260,7 +4914,6 @@ async function downloadAll() {
   }
 }
 
-// SVGオブジェクトをCanvasに直接描画（DOM非依存）
 async function drawObjectsToCanvas(ctx, objects, W, H) {
   const mmToPxLocal = (mm) => mm * (W / 210);
 
@@ -5309,7 +4962,6 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
       const rw = Math.abs(x2 - x1), rh = Math.abs(y2 - y1);
 
       if (obj.pattern === 'solid') {
-        // 塗潰し：透明度40%（背景PDFが透ける・SVGと統一）
         ctx.globalAlpha = 0.4;
         ctx.fillStyle   = obj.color || '#ef4444';
         ctx.fillRect(rx, ry, rw, rh);
@@ -5317,9 +4969,7 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
         ctx.strokeRect(rx, ry, rw, rh);
 
       } else if (obj.pattern === 'hatch' || obj.pattern === 'diag') {
-        // 外枠
         ctx.strokeRect(rx, ry, rw, rh);
-        // クリップしてハッチング
         ctx.save();
         ctx.beginPath();
         ctx.rect(rx, ry, rw, rh);
@@ -5348,7 +4998,6 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
       const erx = Math.abs(x2 - x1) / 2, ery = Math.abs(y2 - y1) / 2;
 
       if (obj.pattern === 'solid') {
-        // 塗潰し：透明度50%
         ctx.beginPath();
         ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
         ctx.globalAlpha = 0.4;
@@ -5358,11 +5007,9 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
         ctx.stroke();
 
       } else if (obj.pattern === 'hatch' || obj.pattern === 'diag') {
-        // 外枠
         ctx.beginPath();
         ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
         ctx.stroke();
-        // クリップしてハッチング
         ctx.save();
         ctx.beginPath();
         ctx.ellipse(ecx, ecy, erx, ery, 0, 0, Math.PI * 2);
@@ -5393,7 +5040,6 @@ async function drawObjectsToCanvas(ctx, objects, W, H) {
   }
 }
 
-// 画像読み込みユーティリティ
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     if (!src) { reject(new Error('no src')); return; }
@@ -5404,11 +5050,9 @@ function loadImage(src) {
   });
 }
 
-
 // ===== ナビゲーション =====
-// 現在どの画面にいるかだけ管理
-// home → menu → viewer の3段階のみ
 let currentScreen = 'home'; // 'home' | 'menu' | 'viewer'
+let _lastLoadPdfTime = 0;
 
 function showScreen(name) {
   const map = { home: 'screen-home', menu: 'screen-menu', viewer: 'screen-viewer' };
@@ -5420,7 +5064,6 @@ function showScreen(name) {
   const fromEl = document.getElementById(map[currentScreen]);
   const toEl   = document.getElementById(map[name]);
 
-  // 全部リセット
   document.querySelectorAll('.screen').forEach(s => {
     s.classList.remove('is-active', 'is-behind');
   });
@@ -5428,7 +5071,6 @@ function showScreen(name) {
   if (direction === 'forward') {
     fromEl.classList.add('is-behind');
     toEl.classList.add('is-active');
-    // ブラウザのスワイプバックを吸収するためダミー履歴を積む
     history.pushState({ screen: name }, '', '');
   } else {
     toEl.classList.add('is-active');
@@ -5438,20 +5080,16 @@ function showScreen(name) {
   currentScreen = name;
 }
 
-// ブラウザの「戻る」ジェスチャー・ボタンをアプリ内goBackに吸収
 window.addEventListener('popstate', (e) => {
-  // ファイルピッカー等でhome画面にいる場合は無視
   if (currentScreen === 'home') return;
-  // アプリ内画面遷移として処理（ブラウザを実際に戻らせない）
+  if (Date.now() - _lastLoadPdfTime < 300) return;
   goBack();
-  // goBack後も履歴が尽きないようダミーを積む
   if (currentScreen !== 'home') {
     history.pushState({ screen: currentScreen }, '', '');
   }
 });
 
 async function goBack() {
-  // 写真ポップアップが開いている場合はまず閉じる
   const popup = document.getElementById('photo-popup');
   if (popup && popup.style.display === 'flex') {
     closePhotoPopup();
@@ -5459,7 +5097,6 @@ async function goBack() {
   }
 
   if (currentScreen === 'viewer') {
-    // ビューア→メニューに戻る前に描画を自動保存
     autoSaveAllDrawings();
     showScreen('menu');
     showMenuContent();
@@ -5472,7 +5109,6 @@ async function goBack() {
 }
 
 // ===== ペンデータ共通ユーティリティ =====
-// キャンバスのペンデータをdrawStateに書き戻し、エクスポート用オブジェクトを返す
 function _collectPenData() {
   for (const key of Object.keys(drawState)) {
     const ds = drawState[key];
@@ -5500,7 +5136,6 @@ function _collectPenData() {
   return export_;
 }
 
-// 全描画キャンバスを自動保存（goBack時に呼ばれる）
 function autoSaveAllDrawings() {
   _collectPenData();
 }
@@ -5513,7 +5148,6 @@ function showToast(msg, type = '') {
   t.className = 'show' + (type ? ' ' + type : '');
   clearTimeout(toastTimer);
   if (type === 'error') {
-    // エラーはタップするまで消えない
     t.style.cursor = 'pointer';
     t.onclick = () => { t.className = ''; t.onclick = null; };
     toastTimer = null;
@@ -5528,7 +5162,6 @@ function closeModal() {
   document.getElementById('modal').classList.remove('show');
 }
 
-// ドラッグ&ドロップ
 const uz = document.getElementById('upload-zone');
 uz.addEventListener('dragover', e => { e.preventDefault(); uz.classList.add('dragover'); });
 uz.addEventListener('dragleave', () => uz.classList.remove('dragover'));
@@ -5543,7 +5176,6 @@ uz.addEventListener('drop', e => {
   }
 });
 
-// 初期表示: ホームをis-activeに
 document.getElementById('screen-home').classList.add('is-active');
 currentScreen = 'home';
 
@@ -5571,7 +5203,6 @@ function attachSwipe(el, onSwipeLeft, onSwipeRight) {
   });
 }
 
-// グリッドの curr-img-stage にスワイプを付与
 function attachGridSwipe(slotKey, sectionKey) {
   const wrap  = document.getElementById('curr-photo-wrap-' + slotKey);
   const stage = wrap ? wrap.querySelector('.curr-img-stage') : null;
@@ -5590,13 +5221,11 @@ function attachGridSwipe(slotKey, sectionKey) {
   );
 }
 
-// sectionKey配下の全スロットにスワイプを一括付与
 function attachAllGridSwipes(sectionKey) {
   const slots = sectionKey === 's3' ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
   slots.forEach(s => attachGridSwipe(s.key, sectionKey));
 }
 
-// ポップアップのimgステージにスワイプを付与（初期化時に1回だけ）
 (function initPopupSwipe() {
   const stage = document.getElementById('popup-img-stage');
   if (!stage) return;
@@ -5618,7 +5247,6 @@ function attachAllGridSwipes(sectionKey) {
 
 // ===== 追加写真機能 =====
 
-// 部材種別リスト（buzai.pdf 部材種別列より）
 const BUZAI_LIST = [
   'Mg:主桁','Cr:横桁','St:縦桁','Ds:床版','Cf:対傾構',
   'Lu:上横構','Ll:下横構','Bt:上・下弦材','Dt:斜材・垂直材','Pt:橋門構',
@@ -5639,7 +5267,6 @@ const BUZAI_LIST = [
   'Eg:目地部','Sg:周辺地盤','Rd:路上','Cx:その他(溝橋)',
 ];
 
-// 損傷種類リスト（sonsyou.pdf より）
 const SONSYOU_LIST = [
   '①腐食','②亀裂','③ゆるみ・脱落','④破断','⑤防食機能の劣化',
   '⑥ひびわれ','⑦剥離・鉄筋露出','⑧漏水・遊離石灰','⑨抜け落ち',
@@ -5650,14 +5277,11 @@ const SONSYOU_LIST = [
   '㉕沈下・移動・傾斜','㉖洗掘','NON',
 ];
 
-// セレクトボックスのオプションHTMLをキャッシュ（モーダル開くたびに生成しないよう）
 const _cachedBuzaiOptions    = BUZAI_LIST.map(b => `<option value="${b.split(':')[0]}">${b}</option>`).join('');
 const _cachedSonsyouOptions  = SONSYOU_LIST.map(s => `<option value="${s}">${s}</option>`).join('');
 
-// その３ 撮影種別
 const S3_TYPES = ['全景','正面','桁下','下部構造','部材記号'];
 
-// 追加写真撮影を起動
 function startExtraPhoto(sectionKey) {
   const old = document.getElementById('extra-camera-input');
   if (old) old.remove();
@@ -5683,21 +5307,17 @@ function startExtraPhoto(sectionKey) {
   input.click();
 }
 
-// 追加写真情報入力モーダルを開く
 function openExtraPhotoModal(sectionKey, dataURL) {
   const existing = document.getElementById('extra-photo-modal');
   if (existing) existing.remove();
 
-  // 撮影促進バナーが残っていれば消去
   const promptEl = document.getElementById('damage-camera-prompt');
   if (promptEl) promptEl.remove();
 
   const isS3 = sectionKey === 's3';
 
-  // 径間リストを取得
   const slots = isS3 ? SURVEY_PHOTO_SLOTS : DAMAGE_PHOTO_SLOTS;
   const spans = [...new Set(slots.map(s => s.span || 1))].sort((a,b) => a-b);
-  // 現在選択中の径間をデフォルトに
   const currentSpan = photoFilter.span || spans[0] || 1;
 
   const spanField = spans.length > 1 ? `
@@ -5775,7 +5395,6 @@ function openExtraPhotoModal(sectionKey, dataURL) {
   modal._sectionKey = sectionKey;
   document.body.appendChild(modal);
   modal.querySelector('button[data-save]').onclick = () => {
-    // フォーム値をモーダル非表示前に取得してdata属性に退避
     modal.dataset.span    = document.getElementById('epm-span')?.value || '1';
     modal.dataset.memo    = document.getElementById('epm-memo')?.value || '';
     modal.dataset.buzai   = document.getElementById('epm-buzai-s10')?.value || '';
@@ -5809,7 +5428,6 @@ function saveExtraPhoto(sectionKey, dataURL) {
   const isS3 = sectionKey === 's3';
   let info = {};
   const modal = document.getElementById('extra-photo-modal');
-  // dataset退避値を優先、なければDOMから直接取得
   const ds = modal?.dataset;
   const memo  = ds?.memo  ?? document.getElementById('epm-memo')?.value  ?? '';
   const span  = parseInt(ds?.span  ?? document.getElementById('epm-span')?.value  ?? '1') || 1;
@@ -5830,7 +5448,6 @@ function saveExtraPhoto(sectionKey, dataURL) {
   if (!state.extraPhotos) state.extraPhotos = [];
   state.extraPhotos.push({ id, sectionKey, dataURL, info });
 
-  // 損傷追加モード経由の場合、引き出し線にラベルを付与
   if (!isS3 && _damageAddDrawKey) {
     const drawDs = drawState[_damageAddDrawKey];
     if (drawDs) {
@@ -5851,11 +5468,9 @@ function saveExtraPhoto(sectionKey, dataURL) {
     _damageAddDrawKey = null;
   }
 
-  // バナーが残っていれば消去
   const prompt = document.getElementById('damage-camera-prompt');
   if (prompt) prompt.remove();
 
-  // モーダルを閉じてグリッド更新・トースト（共通）
   closeExtraPhotoModal();
   renderExtraPhotoGrid(sectionKey, true);
   if (sectionKey === 's9s10') renderExtraPhotoGrid('s10', true);
@@ -5863,15 +5478,12 @@ function saveExtraPhoto(sectionKey, dataURL) {
   showToast('\u2705 \u5199\u771f\u3092\u8ffd\u52a0\u3057\u307e\u3057\u305f', 'success');
 }
 
-// 追加写真グリッドを描画
 function renderExtraPhotoGrid(sectionKey, appendOnly = false) {
   const grid = document.getElementById('extra-photo-grid-' + sectionKey);
   if (!grid) return;
-  // s10とs9s10は同じ追加写真プール
   const keys = sectionKey === 's10' ? ['s10', 's9s10'] : [sectionKey];
   const allPhotos = (state.extraPhotos || []).filter(p => keys.includes(p.sectionKey));
 
-  // 径間フィルター適用（0=全て）
   const currentSpan = photoFilter.span || 0;
   const photos = currentSpan === 0
     ? allPhotos
@@ -5914,7 +5526,6 @@ function renderExtraPhotoGrid(sectionKey, appendOnly = false) {
     return div;
   };
 
-  // appendOnly=trueの場合は最後の1件だけ追記（保存速度改善）
   if (appendOnly && grid.querySelector('[data-photo-id]')) {
     const lastPhoto = photos[photos.length - 1];
     if (lastPhoto && !grid.querySelector(`[data-photo-id="${lastPhoto.id}"]`)) {
@@ -5923,7 +5534,6 @@ function renderExtraPhotoGrid(sectionKey, appendOnly = false) {
     return;
   }
 
-  // 全件再描画
   grid.innerHTML = '';
   photos.forEach((p, i) => grid.appendChild(makeCard(p, i)));
 }
