@@ -5440,6 +5440,8 @@ function showScreen(name) {
 
 // ブラウザの「戻る」ジェスチャー・ボタンをアプリ内goBackに吸収
 window.addEventListener('popstate', (e) => {
+  // ファイルピッカー等でhome画面にいる場合は無視
+  if (currentScreen === 'home') return;
   // アプリ内画面遷移として処理（ブラウザを実際に戻らせない）
   goBack();
   // goBack後も履歴が尽きないようダミーを積む
