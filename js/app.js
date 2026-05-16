@@ -525,7 +525,7 @@ async function loadPDF(input) {
     const formLabel = state.formType === 'kanagawa_municipal' ? '神奈川市町村版' : '標準版';
     showToast(`✅ ${pdf.numPages}ページ読み込み完了（${formLabel}）`, 'success');
   } catch(e) {
-    showToast('❌ PDF読み込みエラー', 'error');
+    console.error('loadPDF error:', e); showToast(`❌ PDF読み込みエラー: ${e?.message || e}`, 'error');
   }
   input.value = '';
 }
