@@ -25,7 +25,7 @@
 // v1.0.3（2026-05-15）スクロール位置修正・ツールバー長押しサイズ選択
 
 // ===== ツールバー長押しメニュー用CSS注入 =====
-(function injectToolbarCSS() {
+document.addEventListener('DOMContentLoaded', function injectToolbarCSS() {
   const style = document.createElement('style');
   style.textContent = `
     .tool-has-size { position: relative; padding-top: 16px !important; }
@@ -47,7 +47,7 @@
     }
   `;
   document.head.appendChild(style);
-})();
+});
 
 // ===== STATE =====
 const state = {
@@ -511,7 +511,7 @@ async function loadPDF(input) {
     const formLabel = state.formType === 'kanagawa_municipal' ? '神奈川市町村版' : '標準版';
     showToast(`✅ ${pdf.numPages}ページ読み込み完了（${formLabel}）`, 'success');
   } catch(e) {
-    showToast('❌ PDF読み込みエラー', 'error');
+    showToast('❌ PDF読み込みエラー: ' + (e && e.message ? e.message : String(e)), 'error');
   }
   input.value = '';
 }
