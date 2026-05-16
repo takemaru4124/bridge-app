@@ -3855,7 +3855,10 @@ async function _tg7Poll() {
   if (!window._tg7ModeOn || !_tg7WaitingSlot) return;
   try {
     const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '', style: {} });
-    if (!photos) return;
+    if (!photos) {
+      showToast('⚠️ TG-7: 写真が見つかりません', 'error');
+      return;
+    }
     const newPhotos = photos.filter(p => !_tg7KnownFiles.has(p.name));
     if (newPhotos.length === 0) return;
 
@@ -3863,8 +3866,11 @@ async function _tg7Poll() {
     _tg7KnownFiles.add(latest.name);
     await _importSDPhotoToSlot(latest.url, latest.name, _tg7WaitingSlot, _tg7WaitingSection);
     _tg7WaitingSlot = null;
-    _tg7WaitingSection = null; // 待機解除
-  } catch(e) {}
+    _tg7WaitingSection = null;
+  } catch(e) {
+    console.error('TG-7 poll error:', e);
+    showToast('❌ TG-7接続エラー: ' + e.message, 'error');
+  }
 }
 
 function popupCapturePhotoTG7(addMode) {
@@ -4622,10 +4628,17 @@ function applyPhotoFilter(sectionKey) {
 }
 
 // ===== カメラ撮影 =====
-function capturePhoto(slotKey, sectionKey, addMode = false) {
+async function capturePhoto(slotKey, sectionKey, addMode = false) {
   if (window._tg7ModeOn) {
     _tg7WaitingSlot = slotKey;
     _tg7WaitingSection = sectionKey;
+    // タップ時点のファイル一覧をスナップショットとして取得
+    try {
+      const snapshot = await _fetchTG7Photos(_tg7BaseURL, { textContent: '', style: {} });
+      _tg7KnownFiles = new Set(snapshot ? snapshot.map(p => p.name) : []);
+    } catch(e) {
+      _tg7KnownFiles = new Set();
+    }
     showToast('📷 TG-7で撮影してください', 'info');
     return;
   }
