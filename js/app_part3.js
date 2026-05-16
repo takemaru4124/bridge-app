@@ -864,7 +864,7 @@ function showScreen(name) {
 
 window.addEventListener('popstate', (e) => {
   if (currentScreen === 'home') return;
-  if (Date.now() - _lastLoadPdfTime < 300) return;
+  if (Date.now() - _lastLoadPdfTime < 3000) return;
   goBack();
   if (currentScreen !== 'home') {
     history.pushState({ screen: currentScreen }, '', '');
