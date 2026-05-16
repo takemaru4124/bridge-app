@@ -1940,6 +1940,7 @@ function selectSDPhoto(url, name, el) {
   }
 }
 
+async function assignSDPhoto() {
   const slotKey = document.getElementById('sd-slot-select').value;
   if (!slotKey) return;
 
