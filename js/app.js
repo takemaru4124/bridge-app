@@ -495,8 +495,8 @@ async function loadPDF(input) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    state.pdfData = arrayBuffer.slice(0);
-    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+    state.pdfData = arrayBuffer.slice(0); // pdf.jsに渡す前にコピーを保存
+    const pdf = await pdfjs.getDocument({ data: state.pdfData.slice(0) }).promise;
     state.pdfDoc = pdf;
     state.pdfName = file.name.replace('.pdf', '');
     state.totalPages = pdf.numPages;
@@ -525,7 +525,7 @@ async function loadPDF(input) {
     const formLabel = state.formType === 'kanagawa_municipal' ? '神奈川市町村版' : '標準版';
     showToast(`✅ ${pdf.numPages}ページ読み込み完了（${formLabel}）`, 'success');
   } catch(e) {
-    console.error('loadPDF error:', e); showToast(`❌ PDF読み込みエラー: ${e?.message || e}`, 'error');
+    showToast('❌ PDF読み込みエラー', 'error');
   }
   input.value = '';
 }
