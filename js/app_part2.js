@@ -1728,6 +1728,11 @@ async function _importSDPhotoToSlot(url, name, slotKey) {
   }
 }
 
+function openSDModal() {
+  _sdFromPopup = false;
+  showSDCardModal();
+}
+
 function openSDModalForPopup() {
   _sdFromPopup = true;
   showSDCardModal();
