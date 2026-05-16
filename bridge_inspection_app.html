@@ -226,7 +226,7 @@
             <div style="font-size:40px;margin-bottom:8px;">📷</div>
             <div style="font-size:12px;font-weight:600;">タップして撮影</div>
           </div>
-          <button onclick="openSDModalForPopup()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📡 デジカメから取得</button>
+          <button onclick="openSDModal()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📡 デジカメから取得</button>
         </div>
         <!-- 撮影済み表示（複数枚スライド） -->
         <div id="popup-current-wrap" style="display:none;flex-direction:column;flex:1;min-height:200px;position:relative;background:#000;border-radius:8px;overflow:hidden;">
@@ -244,7 +244,7 @@
           <div style="display:flex;">
             <button onclick="popupCapturePhoto(true)"  style="flex:1;padding:8px 4px;border:none;background:#22c55e;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">📷 追加</button>
             <button onclick="popupCapturePhoto(false)" style="flex:1;padding:8px 4px;border:none;background:#374151;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🔄 撮り直し</button>
-            <button onclick="openSDModalForPopup()"   style="flex:1;padding:8px 4px;border:none;background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">📡 デジカメ</button>
+            <button onclick="openSDModal()"   style="flex:1;padding:8px 4px;border:none;background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">📡 デジカメ</button>
           </div>
         </div>
       </div>
