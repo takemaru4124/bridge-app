@@ -3837,7 +3837,7 @@ function toggleTG7Mode() {
 
 async function _tg7StartPolling() {
   try {
-    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
+    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '', style: {} });
     if (photos) photos.forEach(p => _tg7KnownFiles.add(p.name));
   } catch(e) {}
 
@@ -3854,7 +3854,7 @@ function _tg7StopPolling() {
 async function _tg7Poll() {
   if (!window._tg7ModeOn || !_tg7WaitingSlot) return;
   try {
-    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '' });
+    const photos = await _fetchTG7Photos(_tg7BaseURL, { textContent: '', style: {} });
     if (!photos) return;
     const newPhotos = photos.filter(p => !_tg7KnownFiles.has(p.name));
     if (newPhotos.length === 0) return;
