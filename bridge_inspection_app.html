@@ -227,6 +227,7 @@
             <div style="font-size:12px;font-weight:600;">タップして撮影</div>
           </div>
           <button onclick="openSDModal()" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📡 デジカメから取得</button>
+          <button id="popup-tg7-btn-none" onclick="popupCapturePhotoTG7()" style="display:none;background:#1d4ed8;border:none;color:#fff;border-radius:8px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">📷 TG-7で撮影</button>
         </div>
         <!-- 撮影済み表示（複数枚スライド） -->
         <div id="popup-current-wrap" style="display:none;flex-direction:column;flex:1;min-height:200px;position:relative;background:#000;border-radius:8px;overflow:hidden;">
@@ -245,6 +246,7 @@
             <button onclick="popupCapturePhoto(true)"  style="flex:1;padding:8px 4px;border:none;background:#22c55e;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">📷 追加</button>
             <button onclick="popupCapturePhoto(false)" style="flex:1;padding:8px 4px;border:none;background:#374151;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">🔄 撮り直し</button>
             <button onclick="openSDModal()"   style="flex:1;padding:8px 4px;border:none;background:#1d4ed8;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">📡 デジカメ</button>
+            <button id="popup-tg7-btn-wrap" onclick="popupCapturePhotoTG7()" style="display:none;flex:1;padding:8px 4px;border:none;background:#0ea5e9;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">📷 TG-7</button>
           </div>
         </div>
       </div>
