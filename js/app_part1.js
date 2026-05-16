@@ -1033,7 +1033,7 @@ let _popupPhotoIdx = 0;
 function popupCapturePhoto(addMode) {
   if (!_popupSlotKey) return;
 
-  if (_tg7ModeOn) {
+  if (window._tg7ModeOn) {
     popupCapturePhotoTG7(addMode);
     return;
   }
