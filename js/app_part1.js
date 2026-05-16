@@ -1,4 +1,7 @@
 
+// TG-7モードフラグ（app_part2で操作、part1から参照するため先頭で宣言）
+var _tg7ModeOn = false;
+
 // PDF.jsワーカー設定（即時実行）
 // pdf.worker をインライン化（オフライン対応）
 (function() {
