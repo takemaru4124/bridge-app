@@ -1,7 +1,4 @@
 
-// TG-7モードフラグ（app_part2で操作、part1から参照するため先頭で宣言）
-var _tg7ModeOn = false;
-
 // PDF.jsワーカー設定（即時実行）
 // pdf.worker をインライン化（オフライン対応）
 (function() {
@@ -1173,13 +1170,6 @@ function updatePopup(slot) {
 
   document.getElementById('popup-title').textContent = '📷 写真番号 No.' + slot.prevNo;
   document.getElementById('popup-label').textContent  = slot.label || '';
-
-  // TG-7ボタン表示切替
-  const tg7Display = _tg7ModeOn ? 'inline-block' : 'none';
-  const btnNone = document.getElementById('popup-tg7-btn-none');
-  const btnWrap = document.getElementById('popup-tg7-btn-wrap');
-  if (btnNone) btnNone.style.display = tg7Display;
-  if (btnWrap) btnWrap.style.display = tg7Display;
 
   const prevImg  = document.getElementById('popup-prev-img');
   const prevNone = document.getElementById('popup-prev-none');
