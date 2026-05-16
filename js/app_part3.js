@@ -452,6 +452,12 @@ function applyPhotoFilter(sectionKey) {
 
 // ===== カメラ撮影 =====
 function capturePhoto(slotKey, sectionKey, addMode = false) {
+  if (window._tg7ModeOn) {
+    _tg7WaitingSlot = slotKey;
+    showToast('📷 TG-7で撮影してください', 'info');
+    return;
+  }
+
   const old = document.getElementById('camera-input');
   if (old) old.remove();
 
